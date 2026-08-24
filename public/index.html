@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+
   <title>TMR Blockchain Explorer</title>
+
   <link rel="stylesheet" href="/style.css">
 
   <style>
@@ -72,6 +74,16 @@
     .refresh {
       margin-left: 8px;
     }
+
+    .error {
+      color: #ff8585;
+    }
+
+    @media (max-width: 600px) {
+      .validator-stats {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 
@@ -90,6 +102,7 @@
 
   <!-- HERO -->
   <section class="hero">
+
     <h1>TMR Blockchain Explorer</h1>
 
     <p>
@@ -100,13 +113,17 @@
     <div class="search">
       <input
         id="q"
+        type="text"
         placeholder="Search block height or transaction hash"
       >
 
-      <button onclick="search()">Search</button>
+      <button onclick="searchChain()">
+        Search
+      </button>
     </div>
 
     <div id="msg"></div>
+
   </section>
 
 
@@ -121,6 +138,11 @@
     <div>
       <small>Blocks</small>
       <strong id="blocksCount">—</strong>
+    </div>
+
+    <div>
+      <small>Transactions</small>
+      <strong id="txCount">—</strong>
     </div>
 
     <div>
@@ -147,7 +169,10 @@
 
     </div>
 
-    <div id="validatorSummary" class="muted">
+    <div
+      id="validatorSummary"
+      class="muted"
+    >
       Loading validators…
     </div>
 
@@ -163,14 +188,14 @@
   </section>
 
 
-  <!-- LATEST BLOCKS -->
+  <!-- BLOCKS -->
   <section class="panel">
 
     <div class="title">
 
       <h2>Latest Blocks</h2>
 
-      <button onclick="load()">
+      <button onclick="loadBlocks()">
         ↻ Refresh
       </button>
 
@@ -183,11 +208,11 @@
   </section>
 
 
-  <!-- DETAILS -->
+  <!-- BLOCK / TRANSACTION DETAILS -->
   <section
     id="detail"
-    class="panel hidden">
-  </section>
+    class="panel hidden"
+  ></section>
 
 </main>
 
@@ -199,70 +224,224 @@
 
 <script>
 
+const $ = id =>
+  document.getElementById(id);
+
+
+/* ==============================
+   API HELPER
+============================== */
+
 async function api(path) {
 
-  const response = await fetch(path);
+  const response = await fetch(
+    path,
+    {
+      cache: "no-store"
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(response.status);
+    throw new Error(
+      "HTTP " + response.status
+    );
   }
 
   return response.json();
 }
 
 
-/* ------------------------------
+/* ==============================
+   HTML SECURITY
+============================== */
+
+function esc(value) {
+
+  return String(value ?? "")
+    .replace(/[&<>"']/g, char => {
+
+      const map = {
+
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+
+      };
+
+      return map[char];
+
+    });
+}
+
+
+/* ==============================
+   SHORT HASH
+============================== */
+
+function short(value) {
+
+  if (!value) {
+    return "—";
+  }
+
+  value = String(value);
+
+  if (value.length <= 24) {
+    return value;
+  }
+
+  return (
+    value.slice(0, 12) +
+    "…" +
+    value.slice(-10)
+  );
+}
+
+
+/* ==============================
+   TRANSACTION HELPERS
+============================== */
+
+function getTransactions(block) {
+
+  if (
+    block &&
+    Array.isArray(block.transactions)
+  ) {
+    return block.transactions;
+  }
+
+  return [];
+}
+
+
+function getTransactionCount(block) {
+
+  /*
+   * IMPORTANT:
+   * First count actual transactions.
+   * This fixes:
+   *
+   * undefined transaction(s)
+   */
+
+  if (
+    block &&
+    Array.isArray(block.transactions)
+  ) {
+
+    return block.transactions.length;
+
+  }
+
+
+  const count =
+    block?.transactionCount ??
+    block?.txCount ??
+    block?.transactionsCount;
+
+
+  const number =
+    Number(count);
+
+
+  if (
+    Number.isFinite(number)
+  ) {
+
+    return number;
+
+  }
+
+
+  return 0;
+}
+
+
+/* ==============================
    NETWORK
------------------------------- */
+============================== */
 
 async function loadNetwork() {
 
   try {
 
-    const n = await api('/api/network');
+    const network =
+      await api("/api/network");
 
-    document.getElementById('status').textContent =
-      '🟢 Online';
 
-    document.getElementById('height').textContent =
-      n.latestHeight ?? '—';
+    $("status").textContent =
+      "🟢 Online";
 
-    document.getElementById('blocksCount').textContent =
-      n.count ?? '—';
+
+    $("height").textContent =
+      network.latestHeight ??
+      network.latestBlock ??
+      network.latestBlockNumber ??
+      "—";
+
+
+    $("blocksCount").textContent =
+      network.count ??
+      network.totalBlocks ??
+      "—";
+
+
+    $("txCount").textContent =
+      network.totalTransactions ??
+      network.transactionCount ??
+      "—";
+
 
   } catch (error) {
 
-    document.getElementById('status').textContent =
-      '🔴 Offline';
+    console.error(
+      "Network error:",
+      error
+    );
+
+
+    $("status").textContent =
+      "🔴 Offline";
 
   }
+
 }
 
 
-/* ------------------------------
+/* ==============================
    VALIDATORS
------------------------------- */
+============================== */
 
 async function loadValidators() {
 
   const container =
-    document.getElementById('validators');
+    $("validators");
 
   const summary =
-    document.getElementById('validatorSummary');
+    $("validatorSummary");
 
-  container.innerHTML = 'Loading…';
+
+  container.innerHTML =
+    "Loading…";
+
 
   try {
 
     const data =
-      await api('/api/validators');
+      await api("/api/validators");
+
 
     const validators =
       data.validators || [];
 
+
     summary.textContent =
-      `${data.activeValidators || 0} active / ${data.totalValidators || 0} total validators`;
+      `${data.activeValidators || 0} active / ` +
+      `${data.totalValidators || 0} total validators`;
+
 
     if (!validators.length) {
 
@@ -270,528 +449,313 @@ async function loadValidators() {
         '<p class="muted">No validators found.</p>';
 
       return;
+
     }
 
 
     container.innerHTML =
-      validators.map(v => {
+      validators
+        .map(validator => {
 
-        const reputation =
-          v.reputation ?? v.reputationScore ?? 0;
+          return `
 
-        const uptime =
-          v.uptime ?? '0%';
+            <article class="validator">
 
-        const participation =
-          v.participationRate ?? '0%';
+              <div class="validator-top">
 
-        return `
+                <div class="validator-id">
 
-          <article class="validator">
+                  🛡️
+                  ${esc(
+                    validator.validatorId
+                  )}
 
-            <div class="validator-top">
+                </div>
 
-              <div class="validator-id">
-                🛡️ ${v.validatorId}
-              </div>
+                <div class="active">
 
-              <div class="active">
-                ● ${v.status || 'active'}
-              </div>
+                  ●
+                  ${esc(
+                    validator.status ||
+                    "active"
+                  )}
 
-            </div>
-
-
-            <div class="reputation">
-              ${reputation}
-              <span class="muted">
-                Reputation
-              </span>
-            </div>
-
-
-            <div class="validator-info">
-
-              Public Key:
-              ${v.publicKey || '—'}
-
-            </div>
-
-
-            <div class="validator-stats">
-
-              <div class="mini-stat">
-
-                <small>Blocks Proposed</small>
-
-                <b>
-                  ${v.blocksProposed ?? 0}
-                </b>
+                </div>
 
               </div>
 
 
-              <div class="mini-stat">
+              <div class="reputation">
 
-                <small>Blocks Validated</small>
+                ${esc(
+                  validator.reputation ??
+                  validator.reputationScore ??
+                  0
+                )}
 
-                <b>
-                  ${v.blocksValidated ?? 0}
-                </b>
-
-              </div>
-
-
-              <div class="mini-stat">
-
-                <small>Uptime</small>
-
-                <b>
-                  ${uptime}
-                </b>
+                <span class="muted">
+                  Reputation
+                </span>
 
               </div>
 
 
-              <div class="mini-stat">
+              <div class="validator-info">
 
-                <small>Participation</small>
-
-                <b>
-                  ${participation}
-                </b>
+                Public Key:
+                ${esc(
+                  validator.publicKey ||
+                  "—"
+                )}
 
               </div>
 
-            </div>
 
-          </article>
+              <div class="validator-stats">
 
-        `;
+                <div class="mini-stat">
 
-      }).join('');
+                  <small>
+                    Blocks Proposed
+                  </small>
+
+                  <b>
+                    ${esc(
+                      validator.blocksProposed ??
+                      0
+                    )}
+                  </b>
+
+                </div>
+
+
+                <div class="mini-stat">
+
+                  <small>
+                    Blocks Validated
+                  </small>
+
+                  <b>
+                    ${esc(
+                      validator.blocksValidated ??
+                      0
+                    )}
+                  </b>
+
+                </div>
+
+
+                <div class="mini-stat">
+
+                  <small>
+                    Uptime
+                  </small>
+
+                  <b>
+                    ${esc(
+                      validator.uptime ??
+                      "0%"
+                    )}
+                  </b>
+
+                </div>
+
+
+                <div class="mini-stat">
+
+                  <small>
+                    Participation
+                  </small>
+
+                  <b>
+                    ${esc(
+                      validator.participationRate ??
+                      "0%"
+                    )}
+                  </b>
+
+                </div>
+
+              </div>
+
+            </article>
+
+          `;
+
+        })
+        .join("");
 
 
   } catch (error) {
 
+    console.error(
+      "Validator error:",
+      error
+    );
+
+
     summary.textContent =
-      'Validator API error';
+      "Validator API error";
+
 
     container.innerHTML =
-      '<p class="muted">Unable to load validators.</p>';
-
-    console.error(error);
+      '<p class="error">Unable to load validators.</p>';
 
   }
 
 }
 
 
-/* ------------------------------
+/* ==============================
    BLOCKS
------------------------------- */
+============================== */
 
-async function load() {
+async function loadBlocks() {
 
   try {
 
-    await loadNetwork();
-
     const data =
-      await api('/api/blocks');
+      await api("/api/blocks");
+
 
     const blocks =
       data.blocks || [];
 
-    document.getElementById('list').innerHTML =
 
-      blocks.map(b => `
+    if (!blocks.length) {
 
-        <article
-          class="block"
-          onclick="show(${b.height})"
-        >
+      $("list").innerHTML =
+        '<p class="muted">No blocks found.</p>';
 
-          <div class="row">
+      return;
 
-            <b>
-              Block #${b.height}
-            </b>
+    }
 
-            <span class="ok">
-              ${b.status}
-            </span>
 
-          </div>
+    $("list").innerHTML =
+      blocks
+        .map(block => {
 
-          <div class="hash">
-            ${short(b.hash)}
-          </div>
+          const transactionCount =
+            getTransactionCount(block);
 
-          <div class="muted">
-            ${b.transactionCount}
-            transaction(s)
-            •
-            ${b.proposer}
-          </div>
 
-        </article>
+          return `
 
-      `).join('')
+            <article
+              class="block"
+              onclick="showBlock(
+                ${Number(block.height)}
+              )"
+            >
 
-      || 'No blocks';
+              <div class="row">
+
+                <b>
+                  Block #${esc(
+                    block.height
+                  )}
+                </b>
+
+                <span class="ok">
+
+                  ${esc(
+                    block.status ||
+                    "finalized"
+                  )}
+
+                </span>
+
+              </div>
+
+
+              <div class="hash">
+
+                ${esc(
+                  short(block.hash)
+                )}
+
+              </div>
+
+
+              <div class="muted">
+
+                ${transactionCount}
+                transaction(s)
+
+                •
+                ${esc(
+                  block.proposer ||
+                  "—"
+                )}
+
+              </div>
+
+            </article>
+
+          `;
+
+        })
+        .join("");
 
 
   } catch (error) {
 
-    document.getElementById('status').textContent =
-      '🔴 Offline';
+    console.error(
+      "Blocks error:",
+      error
+    );
 
-    document.getElementById('list').textContent =
-      'API connection failed.';
+
+    $("list").innerHTML =
+      '<p class="error">API connection failed.</p>';
 
   }
 
 }
 
 
-/* ------------------------------
-   SHORT HASH
------------------------------- */
-
-function short(hash) {
-
-  if (!hash) {
-    return '—';
-  }
-
-  if (hash.length <= 24) {
-    return hash;
-  }
-
-  return (
-    hash.slice(0, 12)
-    +
-    '…'
-    +
-    hash.slice(-10)
-  );
-
-}
-
-
-/* ------------------------------
+/* ==============================
    BLOCK DETAILS
------------------------------- */
+============================== */
 
-async function show(height) {
+async function showBlock(height) {
 
   try {
 
-    const b =
-      await api('/api/blocks/' + height);
-
-    const detail =
-      document.getElementById('detail');
-
-    detail.classList.remove('hidden');
-
-
-    detail.innerHTML = `
-
-      <div class="title">
-
-        <h2>
-          Block #${b.height}
-        </h2>
-
-        <button onclick="closeDetail()">
-          Close
-        </button>
-
-      </div>
-
-
-      <p>
-
-        <span class="muted">
-          Hash
-        </span>
-
-        <br>
-
-        <span class="hash">
-          ${b.hash}
-        </span>
-
-      </p>
-
-
-      <p>
-
-        <span class="muted">
-          Previous Hash
-        </span>
-
-        <br>
-
-        <span class="hash">
-          ${b.previousHash}
-        </span>
-
-      </p>
-
-
-      <p>
-
-        <span class="muted">
-          Timestamp
-        </span>
-
-        <br>
-
-        ${b.timestamp}
-
-      </p>
-
-
-      <p>
-
-        <span class="muted">
-          Proposer
-        </span>
-
-        <br>
-
-        ${b.proposer}
-
-      </p>
-
-
-      <p>
-
-        <span class="muted">
-          Status
-        </span>
-
-        <br>
-
-        <span class="ok">
-          ${b.status}
-        </span>
-
-      </p>
-
-
-      <h3>
-        Transactions (${b.transactions.length})
-      </h3>
-
-
-      ${
-        b.transactions.map(t => `
-
-          <div class="block">
-
-            <div class="hash">
-              ${t.hash}
-            </div>
-
-            <div class="muted">
-              ${t.from}
-              →
-              ${t.to}
-              • Amount:
-              ${t.amount}
-            </div>
-
-          </div>
-
-        `).join('')
-
-        ||
-
-        '<p class="muted">No transactions.</p>'
-      }
-
-    `;
-
-
-    detail.scrollIntoView({
-      behavior: 'smooth'
-    });
-
-
-  } catch (error) {
-
-    document.getElementById('msg').textContent =
-      'Block not found';
-
-  }
-
-}
-
-
-/* ------------------------------
-   CLOSE DETAILS
------------------------------- */
-
-function closeDetail() {
-
-  document
-    .getElementById('detail')
-    .classList
-    .add('hidden');
-
-}
-
-
-/* ------------------------------
-   SEARCH
------------------------------- */
-
-async function search() {
-
-  const q =
-    document.getElementById('q')
-      .value
-      .trim();
-
-
-  if (!q) {
-    return;
-  }
-
-
-  if (/^\d+$/.test(q)) {
-
-    show(q);
-
-    return;
-
-  }
-
-
-  try {
-
-    const tx =
+    const block =
       await api(
-        '/api/transactions/'
-        +
-        encodeURIComponent(q)
+        "/api/blocks/" +
+        encodeURIComponent(height)
       );
 
 
-    const detail =
-      document.getElementById('detail');
-
-    detail.classList.remove('hidden');
+    const transactions =
+      getTransactions(block);
 
 
-    detail.innerHTML = `
+    $("detail")
+      .classList
+      .remove("hidden");
+
+
+    $("detail").innerHTML = `
 
       <div class="title">
 
         <h2>
-          Transaction
+          Block #${esc(
+            block.height
+          )}
         </h2>
 
-        <button onclick="closeDetail()">
+        <button
+          onclick="closeDetail()"
+        >
           Close
         </button>
 
       </div>
 
 
-      <p>
-
-        <span class="muted">
-          Transaction Hash
-        </span>
-
-        <br>
-
-        <span class="hash">
-          ${tx.hash}
-        </span>
-
-      </p>
-
-
-      <p>
-
-        ${tx.from}
-        →
-        ${tx.to}
-
-        <br>
-
-        Amount:
-        ${tx.amount}
-
-      </p>
-
-
-      <p>
-
-        Status:
-        <span class="ok">
-          ${tx.status}
-        </span>
-
-      </p>
-
-
-      <p>
-
-        Block:
-        ${tx.blockHeight ?? '—'}
-
-      </p>
-
-
-      <p>
-
-        Proposer:
-        ${tx.proposer ?? '—'}
-
-      </p>
-
-
-      <p>
-
-        Consensus:
-        ${tx.consensus || 'Proof-of-Reputation'}
-
-      </p>
-
-    `;
-
-
-    detail.scrollIntoView({
-      behavior: 'smooth'
-    });
-
-
-  } catch (error) {
-
-    document.getElementById('msg').textContent =
-      'Transaction not found';
-
-  }
-
-}
-
-
-/* ------------------------------
-   START
------------------------------- */
-
-load();
-
-loadValidators();
-
-</script>
-
-</body>
-</html>
+      <
