@@ -228,7 +228,7 @@ app.get('/api/docs', (req, res) => {
   const docs = {
     title: 'TMR Blockchain Proof of Reputation API',
     version: '1.0.0',
-    baseUrl: `http://localhost:${PORT}`,
+    baseUrl: `${req.protocol}://${req.get('host')}`,
     endpoints: {
       health: {
         method: 'GET',
@@ -272,18 +272,30 @@ app.get('/api/docs', (req, res) => {
 });
 
 // ============================================
+// Explorer / Blockchain Data Endpoints
+// ============================================
+const block1Hash = 'f26958d42a8adc4a4eae4291febcdf564dc3ad25a2d5efc17f17e5adaccee1c';
+const block2Hash = '3a8cd11d20c01fd9805e7c20efd217ae5b296b09020dc4c456b557622bf76913';
+const genesisHash = '0000000000000000000000000000000000000000000000000000000000000000';
+const explorerBlocks = [
+  {height:0,hash:genesisHash,previousHash:null,timestamp:'2026-08-13T00:00:00.000Z',proposer:'genesis',status:'finalized',transactions:[]},
+  {height:1,hash:block1Hash,previousHash:genesisHash,timestamp:'2026-08-24T13:00:26.050Z',proposer:'por-validator-001',status:'finalized',transactions:[{hash:'b4178e7b91a22e0986f0ffb8a5ad0d7f264515c90ae62caabca03cfffa25',from:'tmr1genesis',to:'tmr1validator01',amount:250,nonce:0,data:{type:'transfer'}}]},
+  {height:2,hash:block2Hash,previousHash:block1Hash,timestamp:'2026-08-24T13:00:26.051Z',proposer:'por-validator-002',status:'finalized',transactions:[{hash:'73d78b14b9da5335f7e1bccd8d151f9e839deb0558c9b0ac7e53760ed07bb',from:'tmr1user01',to:'tmr1user02',amount:100,nonce:0,data:{type:'transfer'}},{hash:'19af2d7f3a9b0f...','from':'tmr1user02','to':'tmr1user03','amount':50,nonce:1,data:{type:'transfer'}}]}
+];
+app.get('/api/network',(req,res)=>res.json({success:true,latestHeight:2,count:explorerBlocks.length,algorithm:'proof-of-reputation',status:'online',timestamp:new Date().toISOString()}));
+app.get('/api/blocks',(req,res)=>res.json({success:true,latestHeight:2,count:explorerBlocks.length,blocks:explorerBlocks.slice().reverse().map(b=>({...b,transactionCount:b.transactions.length,consensus:{algorithm:'proof-of-reputation',status:b.status}}))}));
+app.get('/api/blocks/:height',(req,res)=>{const b=explorerBlocks.find(x=>x.height===Number(req.params.height));if(!b)return res.status(404).json({success:false,error:'Block not found'});res.json({...b,transactionCount:b.transactions.length,consensus:{algorithm:'proof-of-reputation',status:b.status}})});
+app.get('/api/transactions/:hash',(req,res)=>{const tx=explorerBlocks.flatMap(b=>b.transactions).find(t=>t.hash===req.params.hash);if(!tx)return res.status(404).json({success:false,error:'Transaction not found'});res.json(tx)});
+app.get('/api/address/:address',(req,res)=>{const address=req.params.address;const transactions=explorerBlocks.flatMap(b=>b.transactions).filter(t=>t.from===address||t.to===address);res.json({success:true,address,transactions,balance:transactions.reduce((sum,t)=>sum+(t.to===address?Number(t.amount):0)-(t.from===address?Number(t.amount):0),0)})});
+
+// ============================================
 // Root Endpoint
 // ============================================
 
+app.use(express.static(require('path').join(__dirname, 'public')));
+
 app.get('/', (req, res) => {
-  res.json({
-    service: 'TMR Blockchain Proof of Reputation',
-    status: 'running',
-    algorithm: 'proof-of-reputation',
-    version: '1.0.0',
-    documentation: `http://localhost:${PORT}/api/docs`,
-    timestamp: new Date().toISOString()
-  });
+  res.sendFile(require('path').join(__dirname, 'public', 'index.html'));
 });
 
 // ============================================
