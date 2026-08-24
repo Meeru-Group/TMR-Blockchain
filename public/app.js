@@ -8,8 +8,27 @@
    CONFIG
 ========================================================= */
 
-const API_BASE = 
-   "https://tmr-blockchain.vercel.app";
+"use strict";
+
+const API_BASE = "https://tmr-blockchain.vercel.app";
+
+const $ = (id) => document.getElementById(id);
+
+async function api(path) {
+  const response = await fetch(API_BASE + path, {
+    method: "GET",
+    headers: {
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return await response.json();
+}
 
 /* =========================================================
    HELPERS
