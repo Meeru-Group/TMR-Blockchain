@@ -1,10 +1,15 @@
-// TMR Blockchain - Proof-of-Reputation API
-// Vercel compatible - No external packages required
+// ============================================================
+// TMR BLOCKCHAIN
+// Proof-of-Reputation Explorer API + Web Server
+// Vercel compatible
+// ============================================================
 
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 // ============================================================
-// TMR NETWORK CONFIG
+// NETWORK
 // ============================================================
 
 const NETWORK = {
@@ -37,6 +42,7 @@ const validators = [
     rewardHistory: [],
     penaltyHistory: []
   },
+
   {
     validatorId: "por-validator-002",
     publicKey: "tmr-public-key-002",
@@ -53,6 +59,7 @@ const validators = [
     rewardHistory: [],
     penaltyHistory: []
   },
+
   {
     validatorId: "por-validator-003",
     publicKey: "tmr-public-key-003",
@@ -81,19 +88,22 @@ const transactions = [
       .createHash("sha256")
       .update("genesis-transaction")
       .digest("hex"),
+
     from: "tmr-genesis",
     to: "validator-001",
     amount: 1000,
     nonce: 0,
     blockHeight: 0,
     status: "confirmed",
-    timestamp: new Date().toISOString()
+    timestamp: "2026-08-13T00:00:00.000Z"
   },
+
   {
     hash: crypto
       .createHash("sha256")
       .update("validator-001-transaction")
       .digest("hex"),
+
     from: "tmr-validator-001",
     to: "validator-002",
     amount: 25,
@@ -102,11 +112,13 @@ const transactions = [
     status: "confirmed",
     timestamp: new Date().toISOString()
   },
+
   {
     hash: crypto
       .createHash("sha256")
       .update("validator-002-transaction")
       .digest("hex"),
+
     from: "tmr-validator-002",
     to: "validator-003",
     amount: 50,
@@ -121,124 +133,333 @@ const transactions = [
 // BLOCKS
 // ============================================================
 
+const block1Hash = crypto
+  .createHash("sha256")
+  .update("tmr-block-1")
+  .digest("hex");
+
+const block2Hash = crypto
+  .createHash("sha256")
+  .update("tmr-block-2")
+  .digest("hex");
+
 const blocks = [
   {
     height: 0,
-    hash: "0000000000000000000000000000000000000000000000000000000000000000",
-    previousHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    timestamp: "2026-08-13T00:00:00.000Z",
-    validator: "tmr-genesis",
-    proposer: "tmr-genesis",
-    transactions: [],
-    consensus: "Proof-of-Reputation",
-    status: "finalized"
-  },
-  {
-    height: 1,
-    hash: crypto
-      .createHash("sha256")
-      .update("tmr-block-1")
-      .digest("hex"),
+
+    hash:
+      "0000000000000000000000000000000000000000000000000000000000000000",
+
     previousHash:
       "0000000000000000000000000000000000000000000000000000000000000000",
-    timestamp: new Date().toISOString(),
-    validator: "por-validator-001",
-    proposer: "por-validator-001",
-    transactions: [transactions[1]],
+
+    timestamp: "2026-08-13T00:00:00.000Z",
+
+    validator: "tmr-genesis",
+    proposer: "tmr-genesis",
+
+    transactions: [],
+
     consensus: "Proof-of-Reputation",
     status: "finalized"
   },
+
+  {
+    height: 1,
+
+    hash: block1Hash,
+
+    previousHash:
+      "0000000000000000000000000000000000000000000000000000000000000000",
+
+    timestamp: new Date().toISOString(),
+
+    validator: "por-validator-001",
+    proposer: "por-validator-001",
+
+    transactions: [
+      transactions[1]
+    ],
+
+    consensus: "Proof-of-Reputation",
+    status: "finalized"
+  },
+
   {
     height: 2,
-    hash: crypto
-      .createHash("sha256")
-      .update("tmr-block-2")
-      .digest("hex"),
-    previousHash: crypto
-      .createHash("sha256")
-      .update("tmr-block-1")
-      .digest("hex"),
+
+    hash: block2Hash,
+
+    previousHash: block1Hash,
+
     timestamp: new Date().toISOString(),
+
     validator: "por-validator-002",
     proposer: "por-validator-002",
-    transactions: [transactions[2]],
+
+    transactions: [
+      transactions[2]
+    ],
+
     consensus: "Proof-of-Reputation",
     status: "finalized"
   }
 ];
 
 // ============================================================
-// HELPER FUNCTIONS
+// NETWORK STATISTICS
 // ============================================================
-
-function json(res, statusCode, data) {
-  res.statusCode = statusCode;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
-
-  res.end(JSON.stringify(data));
-}
-
-function getPath(req) {
-  const url = new URL(
-    req.url,
-    `https://${req.headers.host || "tmr.local"}`
-  );
-
-  return {
-    pathname: url.pathname,
-    searchParams: url.searchParams
-  };
-}
 
 function getNetworkStats() {
   const totalValidators = validators.length;
 
-  const activeValidators = validators.filter(
-    (v) => v.status === "active"
-  ).length;
+  const activeValidators =
+    validators.filter(
+      v => v.status === "active"
+    ).length;
 
-  const suspendedValidators = validators.filter(
-    (v) => v.status === "suspended"
-  ).length;
+  const suspendedValidators =
+    validators.filter(
+      v => v.status === "suspended"
+    ).length;
 
   const averageReputation =
     totalValidators === 0
       ? 0
       : Math.round(
           validators.reduce(
-            (total, validator) =>
-              total + Number(validator.reputationScore || 0),
+            (sum, validator) =>
+              sum +
+              Number(
+                validator.reputationScore ||
+                validator.reputation ||
+                0
+              ),
             0
           ) / totalValidators
         );
 
   const latestBlock =
-    blocks.length > 0 ? blocks[blocks.length - 1].height : 0;
-
-  const totalTransactions = transactions.length;
+    blocks.length
+      ? Math.max(
+          ...blocks.map(
+            block => Number(block.height)
+          )
+        )
+      : 0;
 
   return {
-    algorithm: NETWORK.algorithm,
+    algorithm:
+      NETWORK.algorithm,
+
     totalValidators,
+
     activeValidators,
+
     suspendedValidators,
+
     averageReputation,
-    currentRound: latestBlock + 1,
-    latestBlockNumber: latestBlock,
-    totalBlocks: blocks.length,
-    totalTransactions,
-    approvalRate: "100.00%",
+
+    currentRound:
+      latestBlock + 1,
+
+    latestBlockNumber:
+      latestBlock,
+
+    totalBlocks:
+      blocks.length,
+
+    totalTransactions:
+      transactions.length,
+
+    approvalRate:
+      "100.00%",
+
     votingStats: {
-      totalVotes: validators.length,
-      approvedVotes: validators.length,
-      rejectedVotes: 0
+      totalVotes:
+        validators.length,
+
+      approvedVotes:
+        validators.length,
+
+      rejectedVotes:
+        0
     }
+  };
+}
+
+// ============================================================
+// CONTENT TYPES
+// ============================================================
+
+function getContentType(file) {
+  const ext =
+    path.extname(file).toLowerCase();
+
+  const types = {
+    ".html":
+      "text/html; charset=utf-8",
+
+    ".js":
+      "application/javascript; charset=utf-8",
+
+    ".css":
+      "text/css; charset=utf-8",
+
+    ".json":
+      "application/json; charset=utf-8",
+
+    ".txt":
+      "text/plain; charset=utf-8",
+
+    ".svg":
+      "image/svg+xml",
+
+    ".png":
+      "image/png",
+
+    ".jpg":
+      "image/jpeg",
+
+    ".jpeg":
+      "image/jpeg",
+
+    ".ico":
+      "image/x-icon"
+  };
+
+  return (
+    types[ext] ||
+    "application/octet-stream"
+  );
+}
+
+// ============================================================
+// JSON RESPONSE
+// ============================================================
+
+function sendJSON(
+  res,
+  statusCode,
+  data
+) {
+  res.statusCode =
+    statusCode;
+
+  res.setHeader(
+    "Content-Type",
+    "application/json; charset=utf-8"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,POST,OPTIONS"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
+
+  res.setHeader(
+    "Cache-Control",
+    "no-store"
+  );
+
+  res.end(
+    JSON.stringify(data)
+  );
+}
+
+// ============================================================
+// STATIC FILE
+// ============================================================
+
+function sendFile(
+  res,
+  filePath
+) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return sendJSON(
+        res,
+        404,
+        {
+          success: false,
+          error: "File not found"
+        }
+      );
+    }
+
+    const stat =
+      fs.statSync(filePath);
+
+    if (!stat.isFile()) {
+      return sendJSON(
+        res,
+        404,
+        {
+          success: false,
+          error: "File not found"
+        }
+      );
+    }
+
+    res.statusCode = 200;
+
+    res.setHeader(
+      "Content-Type",
+      getContentType(filePath)
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "no-cache"
+    );
+
+    res.end(
+      fs.readFileSync(filePath)
+    );
+
+  } catch (error) {
+    console.error(
+      "STATIC FILE ERROR:",
+      error
+    );
+
+    return sendJSON(
+      res,
+      500,
+      {
+        success: false,
+        error: "Unable to load file"
+      }
+    );
+  }
+}
+
+// ============================================================
+// URL PARSER
+// ============================================================
+
+function parseURL(req) {
+  const url =
+    new URL(
+      req.url,
+      `https://${req.headers.host || "tmr.local"}`
+    );
+
+  return {
+    pathname:
+      url.pathname,
+
+    searchParams:
+      url.searchParams
   };
 }
 
@@ -247,309 +468,822 @@ function getNetworkStats() {
 // ============================================================
 
 async function handler(req, res) {
+
   try {
+
     // --------------------------------------------------------
-    // CORS OPTIONS
+    // CORS
     // --------------------------------------------------------
 
     if (req.method === "OPTIONS") {
+
       res.statusCode = 204;
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+
+      res.setHeader(
+        "Access-Control-Allow-Origin",
+        "*"
+      );
+
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET,POST,OPTIONS"
+      );
+
       res.setHeader(
         "Access-Control-Allow-Headers",
         "Content-Type, Authorization"
       );
+
       return res.end();
     }
 
-    const { pathname, searchParams } = getPath(req);
+    const {
+      pathname,
+      searchParams
+    } = parseURL(req);
 
-    // --------------------------------------------------------
-    // ROOT
-    // --------------------------------------------------------
+    // ========================================================
+    // WEBSITE
+    // ========================================================
 
-    if (pathname === "/" || pathname === "/api") {
-      return json(res, 200, {
-        success: true,
-        name: NETWORK.name,
-        symbol: NETWORK.symbol,
-        chainId: NETWORK.chainId,
-        consensus: NETWORK.consensus,
-        status: "online",
-        message: "TMR Blockchain API is running",
-        endpoints: [
+    // Main explorer page
+    if (
+      pathname === "/" ||
+      pathname === "/index.html"
+    ) {
+
+      const publicIndex =
+        path.join(
+          __dirname,
+          "public",
+          "index.html"
+        );
+
+      const rootIndex =
+        path.join(
+          __dirname,
+          "index.html"
+        );
+
+      if (
+        fs.existsSync(publicIndex)
+      ) {
+        return sendFile(
+          res,
+          publicIndex
+        );
+      }
+
+      if (
+        fs.existsSync(rootIndex)
+      ) {
+        return sendFile(
+          res,
+          rootIndex
+        );
+      }
+
+      return sendJSON(
+        res,
+        404,
+        {
+          success: false,
+          error:
+            "Explorer index.html not found"
+        }
+      );
+    }
+
+    // Static JavaScript
+    if (
+      pathname === "/app.js"
+    ) {
+
+      const file =
+        path.join(
+          __dirname,
+          "public",
+          "app.js"
+        );
+
+      return sendFile(
+        res,
+        file
+      );
+    }
+
+    // Static CSS
+    if (
+      pathname === "/style.css"
+    ) {
+
+      const publicCSS =
+        path.join(
+          __dirname,
+          "public",
+          "style.css"
+        );
+
+      const rootCSS =
+        path.join(
+          __dirname,
+          "style.css"
+        );
+
+      if (
+        fs.existsSync(publicCSS)
+      ) {
+        return sendFile(
+          res,
+          publicCSS
+        );
+      }
+
+      return sendFile(
+        res,
+        rootCSS
+      );
+    }
+
+    // ========================================================
+    // API ROOT
+    // ========================================================
+
+    if (
+      pathname === "/api" ||
+      pathname === "/api/"
+    ) {
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          name:
+            NETWORK.name,
+
+          symbol:
+            NETWORK.symbol,
+
+          chainId:
+            NETWORK.chainId,
+
+          consensus:
+            NETWORK.consensus,
+
+          status:
+            NETWORK.status,
+
+          message:
+            "TMR Blockchain API is running",
+
+          endpoints: [
+            "/api/health",
+            "/api/network",
+            "/api/validators",
+            "/api/blocks",
+            "/api/transactions",
+            "/api/search"
+          ],
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // HEALTH
+    // ========================================================
+
+    if (
+      pathname === "/api/health"
+    ) {
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          status:
+            "healthy",
+
+          blockchain:
+            NETWORK.name,
+
+          algorithm:
+            NETWORK.algorithm,
+
+          validators:
+            validators.length,
+
+          consensus:
+            "running",
+
+          network:
+            "online",
+
+          latestBlock:
+            blocks[blocks.length - 1]
+              ?.height ?? 0,
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // NETWORK
+    // ========================================================
+
+    if (
+      pathname === "/api/network"
+    ) {
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          network: {
+            name:
+              NETWORK.name,
+
+            symbol:
+              NETWORK.symbol,
+
+            chainId:
+              NETWORK.chainId,
+
+            algorithm:
+              NETWORK.algorithm,
+
+            consensus:
+              NETWORK.consensus,
+
+            status:
+              NETWORK.status,
+
+            ...getNetworkStats()
+          },
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // VALIDATORS
+    // ========================================================
+
+    if (
+      pathname === "/api/validators"
+    ) {
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          totalValidators:
+            validators.length,
+
+          activeValidators:
+            validators.filter(
+              v =>
+                v.status === "active"
+            ).length,
+
+          validators,
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // SINGLE VALIDATOR
+    // ========================================================
+
+    if (
+      pathname.startsWith(
+        "/api/validators/"
+      )
+    ) {
+
+      const validatorId =
+        decodeURIComponent(
+          pathname
+            .split("/")
+            .pop()
+        );
+
+      const validator =
+        validators.find(
+          v =>
+            v.validatorId ===
+            validatorId
+        );
+
+      if (!validator) {
+
+        return sendJSON(
+          res,
+          404,
+          {
+            success: false,
+            error:
+              "Validator not found"
+          }
+        );
+      }
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          validator,
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // BLOCKS
+    // ========================================================
+
+    if (
+      pathname === "/api/blocks"
+    ) {
+
+      let limit =
+        Number(
+          searchParams.get(
+            "limit"
+          ) || 20
+        );
+
+      if (
+        !Number.isFinite(limit)
+      ) {
+        limit = 20;
+      }
+
+      limit =
+        Math.max(
+          1,
+          Math.min(
+            limit,
+            100
+          )
+        );
+
+      const latestBlocks =
+        blocks
+          .slice()
+          .sort(
+            (a, b) =>
+              Number(b.height) -
+              Number(a.height)
+          )
+          .slice(
+            0,
+            limit
+          );
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          total:
+            blocks.length,
+
+          blocks:
+            latestBlocks,
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // SINGLE BLOCK
+    // ========================================================
+
+    if (
+      pathname.startsWith(
+        "/api/blocks/"
+      )
+    ) {
+
+      const blockId =
+        decodeURIComponent(
+          pathname
+            .split("/")
+            .pop()
+        );
+
+      let block;
+
+      if (
+        /^\d+$/.test(
+          blockId
+        )
+      ) {
+
+        block =
+          blocks.find(
+            b =>
+              Number(
+                b.height
+              ) ===
+              Number(blockId)
+          );
+
+      } else {
+
+        block =
+          blocks.find(
+            b =>
+              b.hash ===
+              blockId
+          );
+      }
+
+      if (!block) {
+
+        return sendJSON(
+          res,
+          404,
+          {
+            success: false,
+
+            error:
+              "Block not found"
+          }
+        );
+      }
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          block,
+
+          // Also expose block fields
+          // directly for compatibility
+          height:
+            block.height,
+
+          hash:
+            block.hash,
+
+          previousHash:
+            block.previousHash,
+
+          timestamp:
+            block.timestamp,
+
+          proposer:
+            block.proposer,
+
+          validator:
+            block.validator,
+
+          transactions:
+            block.transactions,
+
+          consensus:
+            block.consensus,
+
+          status:
+            block.status
+        }
+      );
+    }
+
+    // ========================================================
+    // TRANSACTIONS
+    // ========================================================
+
+    if (
+      pathname ===
+      "/api/transactions"
+    ) {
+
+      let limit =
+        Number(
+          searchParams.get(
+            "limit"
+          ) || 50
+        );
+
+      if (
+        !Number.isFinite(limit)
+      ) {
+        limit = 50;
+      }
+
+      limit =
+        Math.max(
+          1,
+          Math.min(
+            limit,
+            100
+          )
+        );
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          total:
+            transactions.length,
+
+          transactions:
+            transactions
+              .slice()
+              .reverse()
+              .slice(
+                0,
+                limit
+              ),
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // SINGLE TRANSACTION
+    // ========================================================
+
+    if (
+      pathname.startsWith(
+        "/api/transactions/"
+      )
+    ) {
+
+      const hash =
+        decodeURIComponent(
+          pathname
+            .split("/")
+            .pop()
+        );
+
+      const transaction =
+        transactions.find(
+          tx =>
+            tx.hash ===
+            hash
+        );
+
+      if (!transaction) {
+
+        return sendJSON(
+          res,
+          404,
+          {
+            success: false,
+
+            error:
+              "Transaction not found"
+          }
+        );
+      }
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          transaction,
+
+          // Direct fields for
+          // frontend compatibility
+          hash:
+            transaction.hash,
+
+          from:
+            transaction.from,
+
+          to:
+            transaction.to,
+
+          amount:
+            transaction.amount,
+
+          nonce:
+            transaction.nonce,
+
+          blockHeight:
+            transaction.blockHeight,
+
+          status:
+            transaction.status,
+
+          timestamp:
+            transaction.timestamp
+        }
+      );
+    }
+
+    // ========================================================
+    // SEARCH
+    // ========================================================
+
+    if (
+      pathname ===
+      "/api/search"
+    ) {
+
+      const query =
+        searchParams.get("q") ||
+        searchParams.get("query") ||
+        "";
+
+      if (
+        !query.trim()
+      ) {
+
+        return sendJSON(
+          res,
+          400,
+          {
+            success: false,
+
+            error:
+              "Search query is required"
+          }
+        );
+      }
+
+      const q =
+        query
+          .trim()
+          .toLowerCase();
+
+      const blockResults =
+        blocks.filter(
+          block =>
+            String(
+              block.height
+            ) === q ||
+
+            String(
+              block.hash
+            )
+              .toLowerCase()
+              .includes(q)
+        );
+
+      const transactionResults =
+        transactions.filter(
+          tx =>
+            String(
+              tx.hash
+            )
+              .toLowerCase()
+              .includes(q) ||
+
+            String(
+              tx.from
+            )
+              .toLowerCase()
+              .includes(q) ||
+
+            String(
+              tx.to
+            )
+              .toLowerCase()
+              .includes(q)
+        );
+
+      const validatorResults =
+        validators.filter(
+          validator =>
+            String(
+              validator.validatorId
+            )
+              .toLowerCase()
+              .includes(q) ||
+
+            String(
+              validator.publicKey
+            )
+              .toLowerCase()
+              .includes(q)
+        );
+
+      return sendJSON(
+        res,
+        200,
+        {
+          success: true,
+
+          query,
+
+          results: {
+            blocks:
+              blockResults,
+
+            transactions:
+              transactionResults,
+
+            validators:
+              validatorResults
+          },
+
+          counts: {
+            blocks:
+              blockResults.length,
+
+            transactions:
+              transactionResults.length,
+
+            validators:
+              validatorResults.length
+          },
+
+          timestamp:
+            new Date().toISOString()
+        }
+      );
+    }
+
+    // ========================================================
+    // 404
+    // ========================================================
+
+    return sendJSON(
+      res,
+      404,
+      {
+        success: false,
+
+        error:
+          "Endpoint not found",
+
+        path:
+          pathname,
+
+        availableEndpoints: [
+          "/",
+          "/api",
           "/api/health",
           "/api/network",
           "/api/validators",
           "/api/blocks",
           "/api/transactions",
           "/api/search"
-        ],
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // HEALTH
-    // --------------------------------------------------------
-
-    if (pathname === "/api/health") {
-      return json(res, 200, {
-        success: true,
-        status: "healthy",
-        algorithm: NETWORK.algorithm,
-        validators: validators.length,
-        consensus: "running",
-        network: "online",
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // NETWORK
-    // --------------------------------------------------------
-
-    if (pathname === "/api/network") {
-      return json(res, 200, {
-        success: true,
-        network: {
-          name: NETWORK.name,
-          symbol: NETWORK.symbol,
-          chainId: NETWORK.chainId,
-          algorithm: NETWORK.algorithm,
-          consensus: NETWORK.consensus,
-          status: NETWORK.status,
-          ...getNetworkStats()
-        },
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // VALIDATORS
-    // --------------------------------------------------------
-
-    if (pathname === "/api/validators") {
-      return json(res, 200, {
-        success: true,
-        totalValidators: validators.length,
-        activeValidators: validators.filter(
-          (v) => v.status === "active"
-        ).length,
-        validators,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // SINGLE VALIDATOR
-    // --------------------------------------------------------
-
-    if (pathname.startsWith("/api/validators/")) {
-      const validatorId = pathname.split("/").pop();
-
-      const validator = validators.find(
-        (v) => v.validatorId === validatorId
-      );
-
-      if (!validator) {
-        return json(res, 404, {
-          success: false,
-          error: "Validator not found"
-        });
+        ]
       }
-
-      return json(res, 200, {
-        success: true,
-        validator,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // BLOCKS
-    // --------------------------------------------------------
-
-    if (pathname === "/api/blocks") {
-      const limit = Math.min(
-        Number(searchParams.get("limit") || 20),
-        100
-      );
-
-      const latestBlocks = blocks
-        .slice()
-        .sort((a, b) => b.height - a.height)
-        .slice(0, limit);
-
-      return json(res, 200, {
-        success: true,
-        total: blocks.length,
-        blocks: latestBlocks,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // SINGLE BLOCK
-    // --------------------------------------------------------
-
-    if (pathname.startsWith("/api/blocks/")) {
-      const blockId = pathname.split("/").pop();
-
-      let block;
-
-      if (/^\d+$/.test(blockId)) {
-        block = blocks.find(
-          (b) => b.height === Number(blockId)
-        );
-      } else {
-        block = blocks.find(
-          (b) => b.hash === blockId
-        );
-      }
-
-      if (!block) {
-        return json(res, 404, {
-          success: false,
-          error: "Block not found"
-        });
-      }
-
-      return json(res, 200, {
-        success: true,
-        block,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // TRANSACTIONS
-    // --------------------------------------------------------
-
-    if (pathname === "/api/transactions") {
-      const limit = Math.min(
-        Number(searchParams.get("limit") || 50),
-        100
-      );
-
-      return json(res, 200, {
-        success: true,
-        total: transactions.length,
-        transactions: transactions.slice(-limit).reverse(),
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // SINGLE TRANSACTION
-    // --------------------------------------------------------
-
-    if (pathname.startsWith("/api/transactions/")) {
-      const hash = pathname.split("/").pop();
-
-      const transaction = transactions.find(
-        (tx) => tx.hash === hash
-      );
-
-      if (!transaction) {
-        return json(res, 404, {
-          success: false,
-          error: "Transaction not found"
-        });
-      }
-
-      return json(res, 200, {
-        success: true,
-        transaction,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // SEARCH
-    // --------------------------------------------------------
-
-    if (pathname === "/api/search") {
-      const query =
-        searchParams.get("q") ||
-        searchParams.get("query") ||
-        "";
-
-      if (!query.trim()) {
-        return json(res, 400, {
-          success: false,
-          error: "Search query is required"
-        });
-      }
-
-      const q = query.toLowerCase().trim();
-
-      // Search block height
-      const blockResults = blocks.filter((block) =>
-        String(block.height) === q ||
-        block.hash.toLowerCase().includes(q)
-      );
-
-      // Search transactions
-      const transactionResults = transactions.filter(
-        (tx) =>
-          tx.hash.toLowerCase().includes(q) ||
-          tx.from.toLowerCase().includes(q) ||
-          tx.to.toLowerCase().includes(q)
-      );
-
-      // Search validators
-      const validatorResults = validators.filter(
-        (validator) =>
-          validator.validatorId.toLowerCase().includes(q) ||
-          validator.publicKey.toLowerCase().includes(q)
-      );
-
-      return json(res, 200, {
-        success: true,
-        query,
-        results: {
-          blocks: blockResults,
-          transactions: transactionResults,
-          validators: validatorResults
-        },
-        counts: {
-          blocks: blockResults.length,
-          transactions: transactionResults.length,
-          validators: validatorResults.length
-        },
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    // --------------------------------------------------------
-    // 404
-    // --------------------------------------------------------
-
-    return json(res, 404, {
-      success: false,
-      error: "API endpoint not found",
-      path: pathname,
-      availableEndpoints: [
-        "/api/health",
-        "/api/network",
-        "/api/validators",
-        "/api/blocks",
-        "/api/transactions",
-        "/api/search"
-      ]
-    });
+    );
 
   } catch (error) {
-    console.error("TMR API ERROR:", error);
 
-    return json(res, 500, {
-      success: false,
-      error: "Internal Server Error",
-      message: error.message || "Unknown server error",
-      timestamp: new Date().toISOString()
-    });
+    console.error(
+      "TMR BLOCKCHAIN ERROR:",
+      error
+    );
+
+    return sendJSON(
+      res,
+      500,
+      {
+        success: false,
+
+        error:
+          "Internal Server Error",
+
+        message:
+          error.message ||
+          "Unknown error",
+
+        timestamp:
+          new Date().toISOString()
+      }
+    );
   }
 }
 
