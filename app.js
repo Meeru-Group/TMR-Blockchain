@@ -1,42 +1,32 @@
 // TMR Blockchain Explorer
 // Frontend application
-// Version: 2.0
+// Fixed API response handling + mobile friendly UI
 
 const API_BASE = "";
 
-/* ---------------------------------
-   HELPERS
----------------------------------- */
-
 const $ = (id) => document.getElementById(id);
 
-async function api(path, options = {}) {
-  const controller = new AbortController();
+let refreshTimer = null;
 
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 10000);
+async function api(path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
 
   try {
     const response = await fetch(API_BASE + path, {
       method: "GET",
-
       headers: {
-        "Accept": "application/json"
+        Accept: "application/json"
       },
-
       cache: "no-store",
-
-      signal: controller.signal,
-
-      ...options
+      signal: controller.signal
     });
+
+    const text = await response.text();
 
     if (!response.ok) {
       throw new Error(`API Error: ${response.status}`);
     }
-
-    const text = await response.text();
 
     if (!text) {
       return {};
@@ -47,41 +37,17 @@ async function api(path, options = {}) {
     } catch {
       throw new Error("Invalid JSON response");
     }
-
   } catch (error) {
-
     if (error.name === "AbortError") {
       throw new Error("API request timed out");
     }
-
     throw error;
-
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
-}
-
-function shortHash(value) {
-
-  if (!value) {
-    return "—";
-  }
-
-  const text = String(value);
-
-  if (text.length <= 28) {
-    return text;
-  }
-
-  return (
-    text.slice(0, 14) +
-    "…" +
-    text.slice(-10)
-  );
 }
 
 function escapeHTML(value) {
-
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -90,96 +56,111 @@ function escapeHTML(value) {
     .replace(/'/g, "&#039;");
 }
 
-/* ---------------------------------
-   TRANSACTION HELPERS
----------------------------------- */
+function shortHash(value) {
+  if (!value) return "—";
 
-function transactionCount(block) {
+  const text = String(value);
 
-  if (
-    Array.isArray(block.transactions)
-  ) {
+  if (text.length <= 28) {
+    return text;
+  }
+
+  return text.slice(0, 14) + "…" + text.slice(-10);
+}
+
+function getBlockHeight(block) {
+  return block?.height ?? block?.blockNumber ?? 0;
+}
+
+function getBlockHash(block) {
+  return block?.hash || block?.blockHash || "—";
+}
+
+function getTransactions(block) {
+  return Array.isArray(block?.transactions)
+    ? block.transactions
+    : [];
+}
+
+function getTransactionCount(block) {
+  if (Array.isArray(block?.transactions)) {
     return block.transactions.length;
   }
 
-  if (
-    typeof block.transactionCount === "number"
-  ) {
-    return block.transactionCount;
-  }
+  const count =
+    block?.transactionCount ??
+    block?.txCount ??
+    block?.transactionsCount ??
+    0;
 
-  if (
-    typeof block.txCount === "number"
-  ) {
-    return block.txCount;
-  }
-
-  if (
-    typeof block.transactionsCount === "number"
-  ) {
-    return block.transactionsCount;
-  }
-
-  return 0;
+  const number = Number(count);
+  return Number.isFinite(number) ? number : 0;
 }
 
-function blockProposer(block) {
-
+function getProposer(block) {
   return (
-    block.proposer ||
-    block.validator ||
-    block.proposerId ||
-    "unknown"
-  );
-}
-
-function blockStatus(block) {
-
-  return (
-    block.status ||
-    "finalized"
-  );
-}
-
-function transactionHash(tx) {
-
-  return (
-    tx.hash ||
-    tx.txHash ||
-    tx.transactionHash ||
-    tx.id ||
+    block?.proposer ||
+    block?.validator ||
+    block?.proposerId ||
     "—"
   );
 }
 
-function transactionFrom(tx) {
+function getStatus(block) {
+  return block?.status || "finalized";
+}
 
+function getTransactionHash(tx) {
   return (
-    tx.from ||
-    tx.sender ||
-    tx.fromAddress ||
+    tx?.hash ||
+    tx?.txHash ||
+    tx?.transactionHash ||
+    tx?.id ||
     "—"
   );
 }
 
-function transactionTo(tx) {
-
+function getTransactionFrom(tx) {
   return (
-    tx.to ||
-    tx.receiver ||
-    tx.toAddress ||
+    tx?.from ||
+    tx?.sender ||
+    tx?.fromAddress ||
     "—"
   );
 }
 
-function transactionAmount(tx) {
-
+function getTransactionTo(tx) {
   return (
-    tx.amount ??
-    tx.value ??
-    tx.quantity ??
+    tx?.to ||
+    tx?.receiver ||
+    tx?.toAddress ||
+    "—"
+  );
+}
+
+function getTransactionAmount(tx) {
+  return (
+    tx?.amount ??
+    tx?.value ??
+    tx?.quantity ??
     0
   );
+}
+
+function setStatus(text) {
+  if ($("status")) {
+    $("status").textContent = text;
+  }
+}
+
+function showMessage(message) {
+  if ($("msg")) {
+    $("msg").textContent = message || "";
+  }
+}
+
+function clearMessage() {
+  showMessage("");
 }
 
 /* ---------------------------------
@@ -187,71 +168,65 @@ function transactionAmount(tx) {
 ---------------------------------- */
 
 async function loadNetwork() {
-
   try {
+    const data = await api("/api/network");
 
-    const network =
-      await api("/api/network");
+    // IMPORTANT:
+    // server.js returns:
+    // { success: true, network: {...} }
+    const network = data.network || data;
 
-    if ($("status")) {
+    setStatus("🟢 Online");
 
-      $("status").textContent =
-        "🟢 Online";
-
-    }
-
-    const latestHeight =
+    const latestBlock =
+      network.latestBlockNumber ??
       network.latestHeight ??
       network.latestBlock ??
       network.height ??
-      network.latestBlockNumber ??
-      "—";
+      0;
 
     if ($("height")) {
-
-      $("height").textContent =
-        latestHeight;
-
+      $("height").textContent = latestBlock;
     }
-
-    const blocksCount =
-      network.count ??
-      network.blocks ??
-      network.totalBlocks ??
-      network.blockCount ??
-      "—";
 
     if ($("blocksCount")) {
-
       $("blocksCount").textContent =
-        blocksCount;
-
-    }
-
-    if ($("latestBlock")) {
-
-      $("latestBlock").textContent =
-        latestHeight;
-
+        network.totalBlocks ??
+        network.count ??
+        network.blocks ??
+        "—";
     }
 
     return network;
-
   } catch (error) {
-
-    console.error(
-      "Network error:",
-      error
-    );
-
-    if ($("status")) {
-
-      $("status").textContent =
-        "🔴 Offline";
-
-    }
-
+    console.error("Network error:", error);
+    setStatus("🔴 Offline");
     throw error;
+  }
+}
+
+/* ---------------------------------
+   TRANSACTIONS COUNT
+---------------------------------- */
+
+async function loadTransactionCount() {
+  try {
+    const data = await api("/api/transactions");
+
+    if ($("txCount")) {
+      $("txCount").textContent =
+        data.total ??
+        data.totalTransactions ??
+        (Array.isArray(data.transactions)
+          ? data.transactions.length
+          : 0);
+    }
+  } catch (error) {
+    console.error("Transaction count error:", error);
+
+    if ($("txCount")) {
+      $("txCount").textContent = "0";
+    }
   }
 }
 
@@ -260,181 +235,112 @@ async function loadNetwork() {
 ---------------------------------- */
 
 async function loadBlocks() {
-
   const list = $("list");
 
-  if (!list) {
-    return;
-  }
+  if (!list) return;
+
+  list.innerHTML = `
+    <div class="muted">
+      Loading latest blocks…
+    </div>
+  `;
 
   try {
-
-    list.innerHTML = `
-      <div class="muted">
-        Loading latest blocks...
-      </div>
-    `;
-
-    const data =
-      await api("/api/blocks");
+    const data = await api("/api/blocks");
 
     let blocks = [];
 
     if (Array.isArray(data)) {
-
       blocks = data;
-
-    } else if (
-      Array.isArray(data.blocks)
-    ) {
-
+    } else if (Array.isArray(data.blocks)) {
       blocks = data.blocks;
-
-    } else if (
-      Array.isArray(data.data)
-    ) {
-
+    } else if (Array.isArray(data.data)) {
       blocks = data.data;
-
     }
 
     if (!blocks.length) {
-
       list.innerHTML = `
         <div class="muted">
           No blocks available.
         </div>
       `;
-
-      updateBlockCounters(0);
-
       return;
     }
 
-    blocks.sort((a, b) => {
+    blocks.sort(
+      (a, b) =>
+        Number(getBlockHeight(b)) -
+        Number(getBlockHeight(a))
+    );
 
-      return (
-        Number(
-          b.height ??
-          b.blockNumber ??
-          0
-        ) -
-        Number(
-          a.height ??
-          a.blockNumber ??
-          0
-        )
-      );
+    list.innerHTML = blocks
+      .map((block) => {
+        const height = getBlockHeight(block);
+        const hash = getBlockHash(block);
+        const count = getTransactionCount(block);
+        const proposer = getProposer(block);
+        const status = getStatus(block);
 
+        return `
+          <article
+            class="block"
+            data-height="${escapeHTML(height)}"
+            role="button"
+            tabindex="0"
+          >
+            <div class="row">
+              <b>Block #${escapeHTML(height)}</b>
+
+              <span class="ok">
+                ${escapeHTML(status)}
+              </span>
+            </div>
+
+            <div class="hash">
+              ${escapeHTML(shortHash(hash))}
+            </div>
+
+            <div class="muted">
+              ${escapeHTML(count)} transaction(s)
+              •
+              ${escapeHTML(proposer)}
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+
+    // Attach click handlers safely.
+    list.querySelectorAll(".block").forEach((element) => {
+      const height = element.dataset.height;
+
+      element.addEventListener("click", () => {
+        showBlock(height);
+      });
+
+      element.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          showBlock(height);
+        }
+      });
     });
 
-    updateBlockCounters(
-      blocks.length
-    );
-
-    list.innerHTML =
-      blocks
-        .map((block) => {
-
-          const height =
-            block.height ??
-            block.blockNumber ??
-            0;
-
-          const hash =
-            block.hash ||
-            block.blockHash ||
-            "—";
-
-          const count =
-            transactionCount(block);
-
-          const proposer =
-            blockProposer(block);
-
-          const status =
-            blockStatus(block);
-
-          return `
-            <article
-              class="block"
-              onclick="showBlock(${Number(height)})"
-              style="cursor:pointer"
-            >
-
-              <div class="row">
-
-                <b>
-                  Block #${escapeHTML(height)}
-                </b>
-
-                <span class="ok">
-                  ${escapeHTML(status)}
-                </span>
-
-              </div>
-
-              <div class="hash">
-                ${escapeHTML(
-                  shortHash(hash)
-                )}
-              </div>
-
-              <div class="muted">
-
-                ${escapeHTML(count)}
-                transaction(s)
-
-                •
-                
-                ${escapeHTML(proposer)}
-
-              </div>
-
-            </article>
-          `;
-
-        })
-        .join("");
-
+    // The API has the authoritative total count.
+    if ($("blocksCount")) {
+      $("blocksCount").textContent =
+        data.total ?? blocks.length;
+    }
   } catch (error) {
-
-    console.error(
-      "Blocks error:",
-      error
-    );
+    console.error("Blocks error:", error);
 
     list.innerHTML = `
-      <div class="muted">
-
+      <div class="error">
         ❌ Failed to load blocks.
-
-        <br><br>
-
-        ${escapeHTML(
-          error.message
-        )}
-
+        <br>
+        ${escapeHTML(error.message)}
       </div>
     `;
-
-  }
-}
-
-function updateBlockCounters(count) {
-
-  if ($("blocksCount")) {
-
-    $("blocksCount").textContent =
-      count;
-
-  }
-
-  if ($("blocks")) {
-
-    $("blocks").textContent =
-      count;
-
   }
 }
 
@@ -443,46 +349,29 @@ function updateBlockCounters(count) {
 ---------------------------------- */
 
 async function showBlock(height) {
-
   const detail = $("detail");
 
-  if (!detail) {
-    return;
-  }
+  if (!detail) return;
+
+  detail.classList.remove("hidden");
+
+  detail.innerHTML = `
+    <div class="muted">
+      Loading block #${escapeHTML(height)}…
+    </div>
+  `;
 
   try {
-
-    detail.classList.remove(
-      "hidden"
+    const data = await api(
+      "/api/blocks/" + encodeURIComponent(height)
     );
 
-    detail.innerHTML = `
-      <div class="muted">
+    // IMPORTANT:
+    // server.js returns { success: true, block: {...}, ... }
+    const block = data.block || data;
 
-        Loading block #${escapeHTML(
-          height
-        )}...
-
-      </div>
-    `;
-
-    const block =
-      await api(
-        "/api/blocks/" +
-        encodeURIComponent(height)
-      );
-
-    const transactions =
-      Array.isArray(
-        block.transactions
-      )
-        ? block.transactions
-        : [];
-
-    const hash =
-      block.hash ||
-      block.blockHash ||
-      "—";
+    const transactions = getTransactions(block);
+    const hash = getBlockHash(block);
 
     const previousHash =
       block.previousHash ||
@@ -496,97 +385,56 @@ async function showBlock(height) {
       block.createdAt ||
       "—";
 
-    const proposer =
-      blockProposer(block);
-
-    const status =
-      blockStatus(block);
+    const proposer = getProposer(block);
+    const status = getStatus(block);
 
     detail.innerHTML = `
-
       <div class="title">
-
         <h2>
           Block #${escapeHTML(
-            block.height ??
-            height
+            getBlockHeight(block)
           )}
         </h2>
 
-        <button
-          onclick="closeDetail()"
-        >
+        <button id="closeDetail" type="button">
           Close
         </button>
-
       </div>
 
       <p>
-
-        <span class="muted">
-          Block Hash
-        </span>
-
+        <span class="muted">Block Hash</span>
         <br>
-
         <span class="hash">
           ${escapeHTML(hash)}
         </span>
-
       </p>
 
       <p>
-
-        <span class="muted">
-          Previous Hash
-        </span>
-
+        <span class="muted">Previous Hash</span>
         <br>
-
         <span class="hash">
-          ${escapeHTML(
-            previousHash
-          )}
+          ${escapeHTML(previousHash)}
         </span>
-
       </p>
 
       <p>
-
-        <span class="muted">
-          Timestamp
-        </span>
-
+        <span class="muted">Timestamp</span>
         <br>
-
         ${escapeHTML(timestamp)}
-
       </p>
 
       <p>
-
-        <span class="muted">
-          Proposer
-        </span>
-
+        <span class="muted">Proposer</span>
         <br>
-
         ${escapeHTML(proposer)}
-
       </p>
 
       <p>
-
-        <span class="muted">
-          Status
-        </span>
-
+        <span class="muted">Status</span>
         <br>
-
         <span class="ok">
           ${escapeHTML(status)}
         </span>
-
       </p>
 
       <h3>
@@ -595,127 +443,82 @@ async function showBlock(height) {
 
       ${
         transactions.length
-
           ? transactions
-              .map((tx) => {
-
-                return `
-
+              .map(
+                (tx) => `
                   <div class="block">
-
                     <div class="hash">
-
                       ${escapeHTML(
-                        transactionHash(tx)
+                        getTransactionHash(tx)
                       )}
-
                     </div>
 
                     <div class="muted">
-
                       ${escapeHTML(
-                        transactionFrom(tx)
+                        getTransactionFrom(tx)
                       )}
-
                       →
-
                       ${escapeHTML(
-                        transactionTo(tx)
+                        getTransactionTo(tx)
                       )}
-
                       • Amount:
-
                       ${escapeHTML(
-                        transactionAmount(tx)
+                        getTransactionAmount(tx)
                       )}
-
                     </div>
-
                   </div>
-
-                `;
-
-              })
+                `
+              )
               .join("")
-
           : `
-
-            <p class="muted">
-              No transactions in this block.
-            </p>
-
-          `
+              <p class="muted">
+                No transactions in this block.
+              </p>
+            `
       }
-
     `;
+
+    $("closeDetail")?.addEventListener(
+      "click",
+      closeDetail
+    );
 
     detail.scrollIntoView({
       behavior: "smooth",
       block: "start"
     });
-
   } catch (error) {
-
-    console.error(
-      "Block details error:",
-      error
-    );
-
-    detail.classList.remove(
-      "hidden"
-    );
+    console.error("Block details error:", error);
 
     detail.innerHTML = `
-
       <div class="title">
+        <h2>Block not found</h2>
 
-        <h2>
-          Block not found
-        </h2>
-
-        <button
-          onclick="closeDetail()"
-        >
+        <button id="closeDetail" type="button">
           Close
         </button>
-
       </div>
 
-      <p class="muted">
-
-        Unable to load block
-        #${escapeHTML(height)}.
-
-        <br><br>
-
-        ${escapeHTML(
-          error.message
-        )}
-
+      <p class="error">
+        Unable to load block #${escapeHTML(height)}.
+        <br>
+        ${escapeHTML(error.message)}
       </p>
-
     `;
 
+    $("closeDetail")?.addEventListener(
+      "click",
+      closeDetail
+    );
   }
 }
 
-/* ---------------------------------
-   CLOSE DETAILS
----------------------------------- */
-
 function closeDetail() {
+  const detail = $("detail");
 
-  const detail =
-    $("detail");
+  if (!detail) return;
 
-  if (!detail) {
-    return;
-  }
-
-  detail.classList.add(
-    "hidden"
-  );
-
+  detail.classList.add("hidden");
   detail.innerHTML = "";
 }
 
@@ -723,122 +526,70 @@ function closeDetail() {
    TRANSACTION SEARCH
 ---------------------------------- */
 
-async function searchTransaction(
-  hash
-) {
-
+async function searchTransaction(hash) {
   try {
-
-    const tx =
-      await api(
-        "/api/transactions/" +
-        encodeURIComponent(hash)
-      );
-
-    const detail =
-      $("detail");
-
-    if (!detail) {
-      return;
-    }
-
-    detail.classList.remove(
-      "hidden"
+    const data = await api(
+      "/api/transactions/" +
+      encodeURIComponent(hash)
     );
 
+    const tx = data.transaction || data;
+    const detail = $("detail");
+
+    if (!detail) return;
+
+    detail.classList.remove("hidden");
+
     detail.innerHTML = `
-
       <div class="title">
+        <h2>Transaction</h2>
 
-        <h2>
-          Transaction
-        </h2>
-
-        <button
-          onclick="closeDetail()"
-        >
+        <button id="closeDetail" type="button">
           Close
         </button>
-
       </div>
 
       <p>
-
         <span class="muted">
           Transaction Hash
         </span>
-
         <br>
-
         <span class="hash">
-
-          ${escapeHTML(
-            transactionHash(tx)
-          )}
-
+          ${escapeHTML(getTransactionHash(tx))}
         </span>
-
       </p>
 
       <p>
-
-        <span class="muted">
-          From
-        </span>
-
+        <span class="muted">From</span>
         <br>
-
-        ${escapeHTML(
-          transactionFrom(tx)
-        )}
-
+        ${escapeHTML(getTransactionFrom(tx))}
       </p>
 
       <p>
-
-        <span class="muted">
-          To
-        </span>
-
+        <span class="muted">To</span>
         <br>
-
-        ${escapeHTML(
-          transactionTo(tx)
-        )}
-
+        ${escapeHTML(getTransactionTo(tx))}
       </p>
 
       <p>
-
-        <span class="muted">
-          Amount
-        </span>
-
+        <span class="muted">Amount</span>
         <br>
-
-        ${escapeHTML(
-          transactionAmount(tx)
-        )}
-
+        ${escapeHTML(getTransactionAmount(tx))}
       </p>
-
     `;
 
+    $("closeDetail")?.addEventListener(
+      "click",
+      closeDetail
+    );
+
     detail.scrollIntoView({
-      behavior: "smooth"
+      behavior: "smooth",
+      block: "start"
     });
-
   } catch (error) {
-
-    console.error(
-      "Transaction error:",
-      error
-    );
-
-    showMessage(
-      "❌ Transaction not found."
-    );
-
+    console.error("Transaction error:", error);
+    showMessage("❌ Transaction not found.");
   }
 }
 
@@ -846,70 +597,27 @@ async function searchTransaction(
    SEARCH
 ---------------------------------- */
 
-async function search() {
+async function searchChain() {
+  const input = $("q");
 
-  const input =
-    $("q");
+  if (!input) return;
 
-  if (!input) {
-    return;
-  }
-
-  const query =
-    input.value.trim();
+  const query = input.value.trim();
 
   if (!query) {
-
     showMessage(
       "Please enter a block height or transaction hash."
     );
-
     return;
   }
 
   clearMessage();
 
   if (/^\d+$/.test(query)) {
-
     await showBlock(query);
-
-    return;
+  } else {
+    await searchTransaction(query);
   }
-
-  await searchTransaction(
-    query
-  );
-}
-
-/* ---------------------------------
-   MESSAGE
----------------------------------- */
-
-function showMessage(
-  message
-) {
-
-  const msg =
-    $("msg");
-
-  if (!msg) {
-    return;
-  }
-
-  msg.textContent =
-    message;
-}
-
-function clearMessage() {
-
-  const msg =
-    $("msg");
-
-  if (!msg) {
-    return;
-  }
-
-  msg.textContent = "";
 }
 
 /* ---------------------------------
@@ -917,502 +625,234 @@ function clearMessage() {
 ---------------------------------- */
 
 async function loadValidators() {
+  const container = $("validators");
+  const summary = $("validatorSummary");
 
-  const section =
-    document.getElementById(
-      "validatorsSection"
-    );
+  if (!container || !summary) return;
+
+  container.innerHTML = `
+    <div class="muted">
+      Loading validators…
+    </div>
+  `;
 
   try {
+    const data = await api("/api/validators");
 
-    const data =
-      await api(
-        "/api/validators"
-      );
+    const validators = Array.isArray(data.validators)
+      ? data.validators
+      : Array.isArray(data)
+        ? data
+        : [];
 
-    let validators = [];
-
-    if (Array.isArray(data)) {
-
-      validators = data;
-
-    } else if (
-      Array.isArray(
-        data.validators
-      )
-    ) {
-
-      validators =
-        data.validators;
-
-    }
-
-    let target = section;
-
-    if (!target) {
-
-      target =
-        document.createElement(
-          "section"
-        );
-
-      target.id =
-        "validatorsSection";
-
-      target.className =
-        "panel";
-
-      const main =
-        document.querySelector(
-          "main"
-        );
-
-      if (main) {
-        main.appendChild(
-          target
-        );
-      }
-    }
-
-    if (!validators.length) {
-
-      target.innerHTML = `
-
-        <div class="title">
-
-          <h2>
-            Validators
-          </h2>
-
-          <button
-            onclick="loadValidators()"
-          >
-            ↻ Refresh
-          </button>
-
-        </div>
-
-        <p class="muted">
-          No validators available.
-        </p>
-
-      `;
-
-      return;
-    }
-
-    const totalValidators =
+    const total =
       data.totalValidators ??
       validators.length;
 
-    const activeValidators =
+    const active =
       data.activeValidators ??
       validators.filter(
-        (v) =>
+        (validator) =>
           String(
-            v.status ||
-            "active"
-          ).toLowerCase() ===
-          "active"
+            validator.status || "active"
+          ).toLowerCase() === "active"
       ).length;
 
-    target.innerHTML = `
-
-      <div class="title">
-
-        <h2>
-          Validators
-        </h2>
-
-        <button
-          onclick="loadValidators()"
-        >
-          ↻ Refresh
-        </button>
-
-      </div>
-
-      <p class="muted">
-
-        ${escapeHTML(
-          activeValidators
-        )}
-        active /
-
-        ${escapeHTML(
-          totalValidators
-        )}
-        total validators
-
-      </p>
-
-      <div id="validatorList">
-      </div>
-
-    `;
-
-    const validatorList =
-      document.getElementById(
-        "validatorList"
-      );
-
-    validatorList.innerHTML =
-      validators
-        .map(
-          (validator) => {
-
-            const id =
-              validator.validatorId ||
-              validator.id ||
-              validator.name ||
-              "unknown-validator";
-
-            const reputation =
-              validator.reputation ??
-              validator.reputationScore ??
-              0;
-
-            const publicKey =
-              validator.publicKey ||
-              validator.public_key ||
-              "—";
-
-            const proposed =
-              validator.blocksProposed ??
-              validator.proposedBlocks ??
-              0;
-
-            const validated =
-              validator.blocksValidated ??
-              validator.validatedBlocks ??
-              0;
-
-            const uptime =
-              validator.uptime ??
-              100;
-
-            const participation =
-              validator.participationRate ??
-              validator.participation ??
-              100;
-
-            const status =
-              validator.status ||
-              "active";
-
-            return `
-
-              <article class="block">
-
-                <div class="row">
-
-                  <b>
-
-                    🛡️
-                    ${escapeHTML(id)}
-
-                  </b>
-
-                  <span class="ok">
-
-                    🟢
-                    ${escapeHTML(
-                      status
-                    )}
-
-                  </span>
-
-                </div>
-
-                <h2>
-
-                  ${escapeHTML(
-                    reputation
-                  )}
-
-                  <span class="muted">
-                    Reputation
-                  </span>
-
-                </h2>
-
-                <p>
-
-                  <span class="muted">
-                    Public Key
-                  </span>
-
-                  <br>
-
-                  <span class="hash">
-
-                    ${escapeHTML(
-                      publicKey
-                    )}
-
-                  </span>
-
-                </p>
-
-                <div class="stats">
-
-                  <div>
-
-                    <small>
-                      Blocks Proposed
-                    </small>
-
-                    <strong>
-                      ${escapeHTML(
-                        proposed
-                      )}
-                    </strong>
-
-                  </div>
-
-                  <div>
-
-                    <small>
-                      Blocks Validated
-                    </small>
-
-                    <strong>
-                      ${escapeHTML(
-                        validated
-                      )}
-                    </strong>
-
-                  </div>
-
-                  <div>
-
-                    <small>
-                      Uptime
-                    </small>
-
-                    <strong>
-
-                      ${escapeHTML(
-                        Number(
-                          uptime
-                        ).toFixed(2)
-                      )}%
-
-                    </strong>
-
-                  </div>
-
-                  <div>
-
-                    <small>
-                      Participation
-                    </small>
-
-                    <strong>
-
-                      ${escapeHTML(
-                        Number(
-                          participation
-                        ).toFixed(2)
-                      )}%
-
-                    </strong>
-
-                  </div>
-
-                </div>
-
-              </article>
-
-            `;
-
-          }
-        )
-        .join("");
-
-  } catch (error) {
-
-    console.warn(
-      "Validators API unavailable:",
-      error
-    );
-
-    if (section) {
-
-      section.innerHTML = `
-
-        <div class="title">
-
-          <h2>
-            Validators
-          </h2>
-
-          <button
-            onclick="loadValidators()"
-          >
-            ↻ Retry
-          </button>
-
-        </div>
-
+    summary.textContent =
+      `${active} active / ${total} total validators`;
+
+    if (!validators.length) {
+      container.innerHTML = `
         <p class="muted">
-
-          ⚠️ Unable to load validators.
-
-          <br>
-
-          ${escapeHTML(
-            error.message
-          )}
-
+          No validators found.
         </p>
-
       `;
-
+      return;
     }
 
+    container.innerHTML = validators
+      .map((validator) => {
+        const id =
+          validator.validatorId ||
+          validator.id ||
+          "unknown-validator";
+
+        const reputation =
+          validator.reputationScore ??
+          validator.reputation ??
+          0;
+
+        const publicKey =
+          validator.publicKey ||
+          validator.public_key ||
+          "—";
+
+        const proposed =
+          validator.blocksProposed ??
+          validator.proposedBlocks ??
+          0;
+
+        const validated =
+          validator.blocksValidated ??
+          validator.validatedBlocks ??
+          0;
+
+        const status =
+          validator.status ||
+          "active";
+
+        const uptime =
+          validator.uptime ??
+          "—";
+
+        const participation =
+          validator.participationRate ??
+          validator.participation ??
+          "—";
+
+        return `
+          <article class="validator">
+            <div class="validator-top">
+              <div class="validator-id">
+                🛡️ ${escapeHTML(id)}
+              </div>
+
+              <div class="active">
+                ● ${escapeHTML(status)}
+              </div>
+            </div>
+
+            <div class="reputation">
+              ${escapeHTML(reputation)}
+              <span class="muted">
+                Reputation
+              </span>
+            </div>
+
+            <div class="validator-info">
+              Public Key:
+              <span class="hash">
+                ${escapeHTML(publicKey)}
+              </span>
+            </div>
+
+            <div class="validator-stats">
+              <div class="mini-stat">
+                <small>Blocks Proposed</small>
+                <b>${escapeHTML(proposed)}</b>
+              </div>
+
+              <div class="mini-stat">
+                <small>Blocks Validated</small>
+                <b>${escapeHTML(validated)}</b>
+              </div>
+
+              <div class="mini-stat">
+                <small>Uptime</small>
+                <b>${escapeHTML(uptime)}</b>
+              </div>
+
+              <div class="mini-stat">
+                <small>Participation</small>
+                <b>${escapeHTML(participation)}</b>
+              </div>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+  } catch (error) {
+    console.error("Validator error:", error);
+
+    summary.textContent =
+      "Validator API error";
+
+    container.innerHTML = `
+      <p class="error">
+        ❌ Unable to load validators.
+        <br>
+        ${escapeHTML(error.message)}
+      </p>
+    `;
   }
 }
 
 /* ---------------------------------
-   REFRESH ALL
+   LOAD EVERYTHING
 ---------------------------------- */
 
 async function load() {
-
   clearMessage();
+  setStatus("🟡 Checking…");
 
-  if ($("status")) {
+  await Promise.allSettled([
+    loadNetwork(),
+    loadTransactionCount(),
+    loadBlocks(),
+    loadValidators()
+  ]);
 
-    $("status").textContent =
-      "🟡 Checking...";
-
+  // If network failed but blocks/API work, show a useful state.
+  if ($("status")?.textContent === "🟡 Checking…") {
+    setStatus("🔴 Offline");
   }
-
-  try {
-
-    await loadNetwork();
-
-  } catch (error) {
-
-    console.error(
-      "Network loading failed:",
-      error
-    );
-
-  }
-
-  try {
-
-    await loadBlocks();
-
-  } catch (error) {
-
-    console.error(
-      "Blocks loading failed:",
-      error
-    );
-
-  }
-
-  try {
-
-    await loadValidators();
-
-  } catch (error) {
-
-    console.error(
-      "Validators loading failed:",
-      error
-    );
-
-  }
-
 }
 
 /* ---------------------------------
    AUTO REFRESH
 ---------------------------------- */
 
-let refreshTimer = null;
-
 function startAutoRefresh() {
-
   if (refreshTimer) {
-
-    clearInterval(
-      refreshTimer
-    );
-
+    clearInterval(refreshTimer);
   }
 
-  refreshTimer =
-    setInterval(
-      () => {
-
-        load();
-
-      },
-      30000
-    );
-
+  refreshTimer = setInterval(() => {
+    load();
+  }, 30000);
 }
 
 /* ---------------------------------
-   ENTER KEY SEARCH
+   START
 ---------------------------------- */
 
-document.addEventListener(
-  "DOMContentLoaded",
-  () => {
+document.addEventListener("DOMContentLoaded", () => {
+  $("searchButton")?.addEventListener(
+    "click",
+    searchChain
+  );
 
-    const input =
-      $("q");
+  $("refreshValidators")?.addEventListener(
+    "click",
+    loadValidators
+  );
 
-    if (input) {
+  $("refreshBlocks")?.addEventListener(
+    "click",
+    loadBlocks
+  );
 
-      input.addEventListener(
-        "keydown",
-        (event) => {
-
-          if (
-            event.key === "Enter"
-          ) {
-
-            search();
-
-          }
-
-        }
-      );
-
+  $("q")?.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Enter") {
+        searchChain();
+      }
     }
+  );
 
-    load();
+  load();
+  startAutoRefresh();
+});
 
-    startAutoRefresh();
-
-  }
-);
-
-/* ---------------------------------
-   GLOBAL FUNCTIONS
----------------------------------- */
-
-window.search =
-  search;
-
-window.showBlock =
-  showBlock;
-
-window.closeDetail =
-  closeDetail;
-
-window.loadValidators =
-  loadValidators;
-
-window.load =
-  load;
-
-window.startAutoRefresh =
-  startAutoRefresh;
+/* Global functions for compatibility */
+window.searchChain = searchChain;
+window.search = searchChain;
+window.load = load;
+window.loadNetwork = loadNetwork;
+window.loadBlocks = loadBlocks;
+window.loadValidators = loadValidators;
+window.showBlock = showBlock;
+window.closeDetail = closeDetail;
+window.searchTransaction = searchTransaction;
+window.startAutoRefresh = startAutoRefresh;
