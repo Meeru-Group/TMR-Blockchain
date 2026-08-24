@@ -20,21 +20,31 @@ function initializeAPI(consensus) {
  * Get complete transaction details
  */
 router.get('/transactions/:hash', (req, res) => {
+   /**
+ * GET /api/transactions/:hash
+ * Get complete transaction details
+ */
+router.get('/transactions/:hash', (req, res) => {
   try {
     const hash = req.params.hash;
 
     let foundTx = null;
     let foundBlock = null;
 
-    const blocks =
-      typeof consensus.getAllBlocks === 'function'
-        ? consensus.getAllBlocks()
-        : Array.isArray(consensus.blocks)
-          ? consensus.blocks
-          : Array.isArray(consensus.blockchain)
-            ? consensus.blockchain
-            : [];
+    // Try to obtain blocks from the consensus engine
+    let blocks = [];
 
+    if (typeof consensus.getAllBlocks === 'function') {
+      blocks = consensus.getAllBlocks() || [];
+    } else if (Array.isArray(consensus.blocks)) {
+      blocks = consensus.blocks;
+    } else if (Array.isArray(consensus.blockchain)) {
+      blocks = consensus.blockchain;
+    } else if (Array.isArray(consensus.chain)) {
+      blocks = consensus.chain;
+    }
+
+    // Search transaction inside blocks
     for (const block of blocks) {
       const transactions = Array.isArray(block.transactions)
         ? block.transactions
@@ -56,6 +66,11 @@ router.get('/transactions/:hash', (req, res) => {
       }
     }
 
+    // If not found in blocks, try consensus transaction lookup
+    if (!foundTx && typeof consensus.getTransaction === 'function') {
+      foundTx = consensus.getTransaction(hash);
+    }
+
     if (!foundTx) {
       return res.status(404).json({
         success: false,
@@ -63,36 +78,106 @@ router.get('/transactions/:hash', (req, res) => {
       });
     }
 
+    // Try to find the parent block using transaction block height
+    if (!foundBlock) {
+      const txHeight =
+        foundTx.blockHeight ??
+        foundTx.blockNumber ??
+        foundTx.height;
+
+      if (txHeight !== undefined && txHeight !== null) {
+
+        if (typeof consensus.getBlock === 'function') {
+          try {
+            foundBlock = consensus.getBlock(Number(txHeight));
+          } catch (_) {}
+        }
+
+        if (!foundBlock && typeof consensus.getBlockByHeight === 'function') {
+          try {
+            foundBlock = consensus.getBlockByHeight(Number(txHeight));
+          } catch (_) {}
+        }
+
+        if (!foundBlock) {
+          foundBlock = blocks.find(
+            b => Number(b.height) === Number(txHeight)
+          );
+        }
+      }
+    }
+
+    // Safely read block metadata
+    const blockHeight =
+      foundTx.blockHeight ??
+      foundTx.blockNumber ??
+      foundTx.height ??
+      foundBlock?.height ??
+      foundBlock?.blockHeight ??
+      foundBlock?.blockNumber ??
+      null;
+
+    const timestamp =
+      foundTx.timestamp ??
+      foundTx.time ??
+      foundBlock?.timestamp ??
+      foundBlock?.time ??
+      null;
+
+    const proposer =
+      foundTx.proposer ??
+      foundBlock?.proposer ??
+      foundBlock?.validator ??
+      foundBlock?.validatorId ??
+      null;
+
+    const status =
+      foundTx.status ??
+      foundBlock?.status ??
+      'finalized';
+
+    const consensusType =
+      foundTx.consensus ??
+      foundBlock?.consensus ??
+      'Proof-of-Reputation';
+
     res.json({
       success: true,
-      hash: foundTx.hash || foundTx.txHash || foundTx.id || hash,
-      status: foundTx.status || foundBlock.status || 'finalized',
-      from: foundTx.from || foundTx.sender || '—',
-      to: foundTx.to || foundTx.recipient || '—',
-      amount: foundTx.amount ?? foundTx.value ?? '—',
-      nonce: foundTx.nonce ?? 0,
 
-      timestamp:
-        foundTx.timestamp ||
-        foundTx.time ||
-        foundBlock.timestamp ||
-        null,
+      hash:
+        foundTx.hash ||
+        foundTx.txHash ||
+        foundTx.id ||
+        hash,
 
-      blockHeight:
-        foundTx.blockHeight ??
-        foundTx.height ??
-        foundBlock.height ??
-        null,
+      status,
 
-      proposer:
-        foundTx.proposer ||
-        foundBlock.proposer ||
-        null,
+      from:
+        foundTx.from ||
+        foundTx.sender ||
+        '—',
 
-      consensus:
-        foundTx.consensus ||
-        foundBlock.consensus ||
-        'Proof-of-Reputation'
+      to:
+        foundTx.to ||
+        foundTx.recipient ||
+        '—',
+
+      amount:
+        foundTx.amount ??
+        foundTx.value ??
+        '—',
+
+      nonce:
+        foundTx.nonce ??
+        0,
+
+      timestamp,
+
+      blockHeight,
+
+      proposer,
+
+      consensus: consensusType
     });
 
   } catch (error) {
@@ -104,275 +189,3 @@ router.get('/transactions/:hash', (req, res) => {
     });
   }
 });
-  /**
-   * GET /api/validators
-   * Get list of all validators
-   */
-  router.get('/validators', (req, res) => {
-    try {
-      const validators = consensus.getAllValidators();
-      const validatorList = validators.map(v => ({
-        validatorId: v.validatorId,
-        reputation: v.reputationScore,
-        status: v.status,
-        blocksProposed: v.blocksProposed,
-        blocksValidated: v.blocksValidated,
-        uptime: v.getUptime(),
-        participationRate: ((v.blocksValidated / (v.missedRounds + v.blocksValidated)) * 100).toFixed(2) + '%',
-        lastActive: new Date(v.lastActive).toISOString()
-      }));
-
-      res.json({
-        success: true,
-        totalValidators: validatorList.length,
-        activeValidators: validatorList.filter(v => v.status === 'active').length,
-        validators: validatorList
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/validators/:id
-   * Get specific validator details
-   */
-  router.get('/validators/:id', (req, res) => {
-    try {
-      const validator = consensus.getValidator(req.params.id);
-      
-      if (!validator) {
-        return res.status(404).json({ success: false, error: 'Validator not found' });
-      }
-
-      const stats = consensus.getValidatorStats(req.params.id);
-      
-      res.json({
-        success: true,
-        validator: {
-          ...stats,
-          rewardHistory: stats.rewardHistory.slice(-20),
-          penaltyHistory: stats.penaltyHistory.slice(-20)
-        }
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/validators/:id/reputation
-   * Get detailed reputation breakdown for validator
-   */
-  router.get('/validators/:id/reputation', (req, res) => {
-    try {
-      const validator = consensus.getValidator(req.params.id);
-      
-      if (!validator) {
-        return res.status(404).json({ success: false, error: 'Validator not found' });
-      }
-
-      const breakdown = consensus.reputationCalculator.getReputationBreakdown(validator);
-      
-      res.json({
-        success: true,
-        reputation: breakdown
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/consensus
-   * Get current consensus status
-   */
-  router.get('/consensus', (req, res) => {
-    try {
-      const status = consensus.getConsensusStatus();
-      
-      res.json({
-        success: true,
-        consensus: status
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/consensus/latest
-   * Get latest consensus round information
-   */
-  router.get('/consensus/latest', (req, res) => {
-    try {
-      const networkStatus = consensus.getNetworkStatus();
-      
-      res.json({
-        success: true,
-        consensus: 'proof-of-reputation',
-        activeValidators: networkStatus.activeValidators,
-        totalValidators: networkStatus.totalValidators,
-        averageReputation: networkStatus.averageReputation,
-        currentRound: networkStatus.currentRound,
-        currentProposer: networkStatus.currentProposer,
-        latestBlockNumber: networkStatus.latestBlockNumber,
-        approvalRate: networkStatus.approvalRate,
-        timestamp: networkStatus.timestamp
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/consensus/network
-   * Get network-wide statistics
-   */
-  router.get('/consensus/network', (req, res) => {
-    try {
-      const networkStatus = consensus.getNetworkStatus();
-      const validators = consensus.getAllValidators();
-      const ranking = consensus.reputationCalculator.rankValidators(validators);
-      
-      res.json({
-        success: true,
-        network: {
-          algorithm: 'proof-of-reputation',
-          totalValidators: networkStatus.totalValidators,
-          activeValidators: networkStatus.activeValidators,
-          suspendedValidators: networkStatus.suspendedValidators,
-          averageReputation: networkStatus.averageReputation,
-          totalRounds: networkStatus.currentRound,
-          totalBlocks: networkStatus.latestBlockNumber,
-          averageApprovalRate: networkStatus.approvalRate,
-          topValidators: ranking.slice(0, 10),
-          votingStats: networkStatus.votingStats,
-          timestamp: networkStatus.timestamp
-        }
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/consensus/penalties
-   * Get penalty statistics
-   */
-  router.get('/consensus/penalties', (req, res) => {
-    try {
-      const report = consensus.penaltyEngine.getPenaltyReport(50);
-      
-      res.json({
-        success: true,
-        penalties: report
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/consensus/rewards
-   * Get reward statistics
-   */
-  router.get('/consensus/rewards', (req, res) => {
-    try {
-      const report = consensus.penaltyEngine.getRewardReport(50);
-      
-      res.json({
-        success: true,
-        rewards: report
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/consensus/sybil-check
-   * Check network Sybil resistance status
-   */
-  router.get('/consensus/sybil-check', (req, res) => {
-    try {
-      const sybilCheck = consensus.checkSybilResistance();
-      
-      res.json({
-        success: true,
-        sybilResistance: sybilCheck
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/consensus/reputation-ranking
-   * Get validator ranking by reputation
-   */
-  router.get('/consensus/reputation-ranking', (req, res) => {
-    try {
-      const validators = consensus.getAllValidators();
-      const ranking = consensus.reputationCalculator.rankValidators(validators);
-      
-      res.json({
-        success: true,
-        ranking: ranking.map((r, index) => ({
-          rank: index + 1,
-          validatorId: r.validatorId,
-          reputation: r.reputation,
-          status: validators.find(v => v.validatorId === r.validatorId)?.status
-        }))
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/health
-   * Health check endpoint
-   */
-  router.get('/health', (req, res) => {
-    try {
-      const status = consensus.getNetworkStatus();
-      
-      res.json({
-        success: true,
-        status: 'healthy',
-        algorithm: 'proof-of-reputation',
-        validators: status.activeValidators,
-        consensus: status.currentRound > 0 ? 'running' : 'initializing'
-      });
-    } catch (error) {
-      res.status(503).json({ success: false, status: 'unhealthy', error: error.message });
-    }
-  });
-
-  /**
-   * GET /api/config
-   * Get consensus configuration (public)
-   */
-  router.get('/config', (req, res) => {
-    try {
-      res.json({
-        success: true,
-        config: {
-          algorithm: consensus.config.algorithm,
-          weights: consensus.config.weights,
-          rewards: consensus.config.rewards,
-          penalties: consensus.config.penalties,
-          consensus: consensus.config.consensus,
-          antiGaming: consensus.config.antiGaming
-        }
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  return router;
-}
-
-module.exports = { initializeAPI };
