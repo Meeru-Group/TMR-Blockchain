@@ -2,134 +2,40 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
   <title>TMR Blockchain Explorer</title>
-
   <link rel="stylesheet" href="/style.css">
-
-  <style>
-    .validators {
-      display: grid;
-      gap: 14px;
-    }
-
-    .validator {
-      padding: 18px;
-      border: 1px solid #293653;
-      border-radius: 18px;
-      background: #111a2d;
-    }
-
-    .validator-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .validator-id {
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    .active {
-      color: #6ee7a0;
-    }
-
-    .reputation {
-      font-size: 30px;
-      font-weight: 800;
-      margin: 12px 0;
-    }
-
-    .validator-info {
-      color: #9aa8c2;
-      line-height: 1.8;
-    }
-
-    .validator-stats {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-      margin-top: 12px;
-    }
-
-    .mini-stat {
-      padding: 12px;
-      border-radius: 12px;
-      background: #0b1222;
-    }
-
-    .mini-stat small {
-      display: block;
-      color: #8d9ab2;
-    }
-
-    .mini-stat b {
-      display: block;
-      margin-top: 4px;
-    }
-
-    .refresh {
-      margin-left: 8px;
-    }
-
-    .error {
-      color: #ff8585;
-    }
-
-    @media (max-width: 600px) {
-      .validator-stats {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
 </head>
 
 <body>
-
 <header>
   <div>
     <b>🔗 TMR Blockchain</b>
     <small>Proof-of-Reputation Explorer</small>
   </div>
-
-  <span id="status">Checking…</span>
+  <span id="status">🟡 Checking…</span>
 </header>
 
 <main>
-
-  <!-- HERO -->
   <section class="hero">
-
     <h1>TMR Blockchain Explorer</h1>
-
-    <p>
-      Explore blocks, transactions and validators
-      on the TMR network.
-    </p>
+    <p>Explore blocks, transactions and validators on the TMR network.</p>
 
     <div class="search">
       <input
         id="q"
         type="text"
         placeholder="Search block height or transaction hash"
+        autocomplete="off"
       >
-
-      <button onclick="searchChain()">
-        Search
-      </button>
+      <button id="searchButton" type="button">Search</button>
     </div>
 
-    <div id="msg"></div>
-
+    <div id="msg" class="muted"></div>
   </section>
 
-
-  <!-- NETWORK STATS -->
   <section class="stats">
-
     <div>
       <small>Latest Block</small>
       <strong id="height">—</strong>
@@ -149,613 +55,43 @@
       <small>Consensus</small>
       <strong>Proof-of-Reputation</strong>
     </div>
-
   </section>
 
-
-  <!-- VALIDATORS -->
   <section class="panel">
-
     <div class="title">
-
       <h2>Validators</h2>
-
-      <button
-        class="refresh"
-        onclick="loadValidators()"
-      >
-        ↻ Refresh
-      </button>
-
+      <button id="refreshValidators" type="button">↻ Refresh</button>
     </div>
 
-    <div
-      id="validatorSummary"
-      class="muted"
-    >
+    <div id="validatorSummary" class="muted">
       Loading validators…
     </div>
 
     <br>
 
-    <div
-      id="validators"
-      class="validators"
-    >
+    <div id="validators" class="validators">
       Loading…
     </div>
-
   </section>
 
-
-  <!-- BLOCKS -->
   <section class="panel">
-
     <div class="title">
-
       <h2>Latest Blocks</h2>
-
-      <button onclick="loadBlocks()">
-        ↻ Refresh
-      </button>
-
+      <button id="refreshBlocks" type="button">↻ Refresh</button>
     </div>
 
     <div id="list">
-      Loading…
+      Loading latest blocks…
     </div>
-
   </section>
 
-
-  <!-- BLOCK / TRANSACTION DETAILS -->
-  <section
-    id="detail"
-    class="panel hidden"
-  ></section>
-
+  <section id="detail" class="panel hidden"></section>
 </main>
-
 
 <footer>
   TMR Blockchain Explorer
 </footer>
 
-
-<script>
-
-const $ = id =>
-  document.getElementById(id);
-
-
-/* ==============================
-   API HELPER
-============================== */
-
-async function api(path) {
-
-  const response = await fetch(
-    path,
-    {
-      cache: "no-store"
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "HTTP " + response.status
-    );
-  }
-
-  return response.json();
-}
-
-
-/* ==============================
-   HTML SECURITY
-============================== */
-
-function esc(value) {
-
-  return String(value ?? "")
-    .replace(/[&<>"']/g, char => {
-
-      const map = {
-
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-
-      };
-
-      return map[char];
-
-    });
-}
-
-
-/* ==============================
-   SHORT HASH
-============================== */
-
-function short(value) {
-
-  if (!value) {
-    return "—";
-  }
-
-  value = String(value);
-
-  if (value.length <= 24) {
-    return value;
-  }
-
-  return (
-    value.slice(0, 12) +
-    "…" +
-    value.slice(-10)
-  );
-}
-
-
-/* ==============================
-   TRANSACTION HELPERS
-============================== */
-
-function getTransactions(block) {
-
-  if (
-    block &&
-    Array.isArray(block.transactions)
-  ) {
-    return block.transactions;
-  }
-
-  return [];
-}
-
-
-function getTransactionCount(block) {
-
-  /*
-   * IMPORTANT:
-   * First count actual transactions.
-   * This fixes:
-   *
-   * undefined transaction(s)
-   */
-
-  if (
-    block &&
-    Array.isArray(block.transactions)
-  ) {
-
-    return block.transactions.length;
-
-  }
-
-
-  const count =
-    block?.transactionCount ??
-    block?.txCount ??
-    block?.transactionsCount;
-
-
-  const number =
-    Number(count);
-
-
-  if (
-    Number.isFinite(number)
-  ) {
-
-    return number;
-
-  }
-
-
-  return 0;
-}
-
-
-/* ==============================
-   NETWORK
-============================== */
-
-async function loadNetwork() {
-
-  try {
-
-    const network =
-      await api("/api/network");
-
-
-    $("status").textContent =
-      "🟢 Online";
-
-
-    $("height").textContent =
-      network.latestHeight ??
-      network.latestBlock ??
-      network.latestBlockNumber ??
-      "—";
-
-
-    $("blocksCount").textContent =
-      network.count ??
-      network.totalBlocks ??
-      "—";
-
-
-    $("txCount").textContent =
-      network.totalTransactions ??
-      network.transactionCount ??
-      "—";
-
-
-  } catch (error) {
-
-    console.error(
-      "Network error:",
-      error
-    );
-
-
-    $("status").textContent =
-      "🔴 Offline";
-
-  }
-
-}
-
-
-/* ==============================
-   VALIDATORS
-============================== */
-
-async function loadValidators() {
-
-  const container =
-    $("validators");
-
-  const summary =
-    $("validatorSummary");
-
-
-  container.innerHTML =
-    "Loading…";
-
-
-  try {
-
-    const data =
-      await api("/api/validators");
-
-
-    const validators =
-      data.validators || [];
-
-
-    summary.textContent =
-      `${data.activeValidators || 0} active / ` +
-      `${data.totalValidators || 0} total validators`;
-
-
-    if (!validators.length) {
-
-      container.innerHTML =
-        '<p class="muted">No validators found.</p>';
-
-      return;
-
-    }
-
-
-    container.innerHTML =
-      validators
-        .map(validator => {
-
-          return `
-
-            <article class="validator">
-
-              <div class="validator-top">
-
-                <div class="validator-id">
-
-                  🛡️
-                  ${esc(
-                    validator.validatorId
-                  )}
-
-                </div>
-
-                <div class="active">
-
-                  ●
-                  ${esc(
-                    validator.status ||
-                    "active"
-                  )}
-
-                </div>
-
-              </div>
-
-
-              <div class="reputation">
-
-                ${esc(
-                  validator.reputation ??
-                  validator.reputationScore ??
-                  0
-                )}
-
-                <span class="muted">
-                  Reputation
-                </span>
-
-              </div>
-
-
-              <div class="validator-info">
-
-                Public Key:
-                ${esc(
-                  validator.publicKey ||
-                  "—"
-                )}
-
-              </div>
-
-
-              <div class="validator-stats">
-
-                <div class="mini-stat">
-
-                  <small>
-                    Blocks Proposed
-                  </small>
-
-                  <b>
-                    ${esc(
-                      validator.blocksProposed ??
-                      0
-                    )}
-                  </b>
-
-                </div>
-
-
-                <div class="mini-stat">
-
-                  <small>
-                    Blocks Validated
-                  </small>
-
-                  <b>
-                    ${esc(
-                      validator.blocksValidated ??
-                      0
-                    )}
-                  </b>
-
-                </div>
-
-
-                <div class="mini-stat">
-
-                  <small>
-                    Uptime
-                  </small>
-
-                  <b>
-                    ${esc(
-                      validator.uptime ??
-                      "0%"
-                    )}
-                  </b>
-
-                </div>
-
-
-                <div class="mini-stat">
-
-                  <small>
-                    Participation
-                  </small>
-
-                  <b>
-                    ${esc(
-                      validator.participationRate ??
-                      "0%"
-                    )}
-                  </b>
-
-                </div>
-
-              </div>
-
-            </article>
-
-          `;
-
-        })
-        .join("");
-
-
-  } catch (error) {
-
-    console.error(
-      "Validator error:",
-      error
-    );
-
-
-    summary.textContent =
-      "Validator API error";
-
-
-    container.innerHTML =
-      '<p class="error">Unable to load validators.</p>';
-
-  }
-
-}
-
-
-/* ==============================
-   BLOCKS
-============================== */
-
-async function loadBlocks() {
-
-  try {
-
-    const data =
-      await api("/api/blocks");
-
-
-    const blocks =
-      data.blocks || [];
-
-
-    if (!blocks.length) {
-
-      $("list").innerHTML =
-        '<p class="muted">No blocks found.</p>';
-
-      return;
-
-    }
-
-
-    $("list").innerHTML =
-      blocks
-        .map(block => {
-
-          const transactionCount =
-            getTransactionCount(block);
-
-
-          return `
-
-            <article
-              class="block"
-              onclick="showBlock(
-                ${Number(block.height)}
-              )"
-            >
-
-              <div class="row">
-
-                <b>
-                  Block #${esc(
-                    block.height
-                  )}
-                </b>
-
-                <span class="ok">
-
-                  ${esc(
-                    block.status ||
-                    "finalized"
-                  )}
-
-                </span>
-
-              </div>
-
-
-              <div class="hash">
-
-                ${esc(
-                  short(block.hash)
-                )}
-
-              </div>
-
-
-              <div class="muted">
-
-                ${transactionCount}
-                transaction(s)
-
-                •
-                ${esc(
-                  block.proposer ||
-                  "—"
-                )}
-
-              </div>
-
-            </article>
-
-          `;
-
-        })
-        .join("");
-
-
-  } catch (error) {
-
-    console.error(
-      "Blocks error:",
-      error
-    );
-
-
-    $("list").innerHTML =
-      '<p class="error">API connection failed.</p>';
-
-  }
-
-}
-
-
-/* ==============================
-   BLOCK DETAILS
-============================== */
-
-async function showBlock(height) {
-
-  try {
-
-    const block =
-      await api(
-        "/api/blocks/" +
-        encodeURIComponent(height)
-      );
-
-
-    const transactions =
-      getTransactions(block);
-
-
-    $("detail")
-      .classList
-      .remove("hidden");
-
-
-    $("detail").innerHTML = `
-
-      <div class="title">
-
-        <h2>
-          Block #${esc(
-            block.height
-          )}
-        </h2>
-
-        <button
-          onclick="closeDetail()"
-        >
-          Close
-        </button>
-
-      </div>
-
-
-      <
+<script src="/app.js" defer></script>
+</body>
+</html>
