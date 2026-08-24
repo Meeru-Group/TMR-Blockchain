@@ -1,16 +1,18 @@
 /**
  * TMR Blockchain
- * Proof-of-Reputation Consensus API
+ * Proof of Reputation Consensus API
  *
- * API routes:
+ * Complete API routes for:
  * - Transactions
  * - Validators
  * - Reputation
  * - Consensus
- * - Network
- * - Rewards / Penalties
+ * - Network statistics
+ * - Rewards
+ * - Penalties
+ * - Sybil resistance
  * - Health
- * - Configuration
+ * - Public configuration
  */
 
 const express = require('express');
@@ -21,11 +23,14 @@ const router = express.Router();
  */
 function initializeAPI(consensus) {
 
-  // ============================================================
-  // TRANSACTION DETAILS
-  // GET /api/transactions/:hash
-  // ============================================================
+  /* =========================================================
+     TRANSACTIONS
+     ========================================================= */
 
+  /**
+   * GET /api/transactions/:hash
+   * Get complete transaction details
+   */
   router.get('/transactions/:hash', (req, res) => {
     try {
       const hash = req.params.hash;
@@ -33,32 +38,28 @@ function initializeAPI(consensus) {
       let foundTx = null;
       let foundBlock = null;
 
-      // Get blockchain blocks safely
-      let blocks = [];
+      const blocks =
+        typeof consensus.getAllBlocks === 'function'
+          ? consensus.getAllBlocks()
+          : Array.isArray(consensus.blocks)
+            ? consensus.blocks
+            : Array.isArray(consensus.blockchain)
+              ? consensus.blockchain
+              : [];
 
-      if (typeof consensus.getAllBlocks === 'function') {
-        blocks = consensus.getAllBlocks();
-      } else if (Array.isArray(consensus.blocks)) {
-        blocks = consensus.blocks;
-      } else if (Array.isArray(consensus.blockchain)) {
-        blocks = consensus.blockchain;
-      }
-
-      // Search transaction inside blocks
       for (const block of blocks) {
         const transactions = Array.isArray(block.transactions)
           ? block.transactions
           : [];
 
-        const tx = transactions.find((t) => {
-          if (!t) return false;
-
-          return (
+        const tx = transactions.find(t =>
+          t &&
+          (
             t.hash === hash ||
             t.txHash === hash ||
             t.id === hash
-          );
-        });
+          )
+        );
 
         if (tx) {
           foundTx = tx;
@@ -67,7 +68,6 @@ function initializeAPI(consensus) {
         }
       }
 
-      // Transaction not found
       if (!foundTx) {
         return res.status(404).json({
           success: false,
@@ -75,100 +75,66 @@ function initializeAPI(consensus) {
         });
       }
 
-      // Safely get values
-      const txHash =
-        foundTx.hash ||
-        foundTx.txHash ||
-        foundTx.id ||
-        hash;
-
-      const status =
-        foundTx.status ||
-        foundBlock?.status ||
-        'finalized';
-
-      const from =
-        foundTx.from ||
-        foundTx.sender ||
-        foundTx.fromAddress ||
-        '—';
-
-      const to =
-        foundTx.to ||
-        foundTx.recipient ||
-        foundTx.toAddress ||
-        '—';
-
-      const amount =
-        foundTx.amount ??
-        foundTx.value ??
-        foundTx.quantity ??
-        '—';
-
-      const nonce =
-        foundTx.nonce ??
-        0;
-
-      const timestamp =
-        foundTx.timestamp ||
-        foundTx.time ||
-        foundTx.createdAt ||
-        foundBlock?.timestamp ||
-        foundBlock?.time ||
-        null;
-
-      const blockHeight =
-        foundTx.blockHeight ??
-        foundTx.height ??
-        foundBlock?.height ??
-        foundBlock?.blockHeight ??
-        null;
-
-      const proposer =
-        foundTx.proposer ||
-        foundBlock?.proposer ||
-        foundBlock?.validator ||
-        foundBlock?.validatorId ||
-        null;
-
-      const consensusType =
-        foundTx.consensus ||
-        foundBlock?.consensus ||
-        consensus.config?.algorithm ||
-        'Proof-of-Reputation';
-
-      // Return complete transaction information
-      return res.json({
+      res.json({
         success: true,
 
-        hash: txHash,
+        hash:
+          foundTx.hash ||
+          foundTx.txHash ||
+          foundTx.id ||
+          hash,
 
-        status: status,
+        status:
+          foundTx.status ||
+          foundBlock.status ||
+          'finalized',
 
-        from: from,
+        from:
+          foundTx.from ||
+          foundTx.sender ||
+          '—',
 
-        to: to,
+        to:
+          foundTx.to ||
+          foundTx.recipient ||
+          '—',
 
-        amount: amount,
+        amount:
+          foundTx.amount ??
+          foundTx.value ??
+          '—',
 
-        nonce: nonce,
+        nonce:
+          foundTx.nonce ??
+          0,
 
-        timestamp: timestamp,
+        timestamp:
+          foundTx.timestamp ||
+          foundTx.time ||
+          foundBlock.timestamp ||
+          null,
 
-        blockHeight: blockHeight,
+        blockHeight:
+          foundTx.blockHeight ??
+          foundTx.height ??
+          foundBlock.height ??
+          null,
 
-        proposer: proposer,
+        proposer:
+          foundTx.proposer ||
+          foundBlock.proposer ||
+          null,
 
-        consensus: consensusType
+        consensus:
+          foundTx.consensus ||
+          foundBlock.consensus ||
+          'Proof-of-Reputation'
       });
 
     } catch (error) {
-      console.error(
-        'Transaction lookup error:',
-        error
-      );
+      console.error('Transaction lookup error:', error);
 
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: error.message
       });
@@ -176,11 +142,14 @@ function initializeAPI(consensus) {
   });
 
 
-  // ============================================================
-  // VALIDATORS
-  // GET /api/validators
-  // ============================================================
+  /* =========================================================
+     VALIDATORS
+     ========================================================= */
 
+  /**
+   * GET /api/validators
+   * Get all validators
+   */
   router.get('/validators', (req, res) => {
     try {
       const validators =
@@ -188,32 +157,50 @@ function initializeAPI(consensus) {
           ? consensus.getAllValidators()
           : [];
 
-      const validatorList = validators.map((v) => {
+      const validatorList = validators.map(v => {
+
+        const validated =
+          Number(v.blocksValidated || 0);
+
+        const missed =
+          Number(v.missedRounds || 0);
 
         const totalParticipation =
-          (v.missedRounds || 0) +
-          (v.blocksValidated || 0);
+          validated + missed;
 
         const participationRate =
           totalParticipation > 0
-            ? (
-                (v.blocksValidated || 0) /
-                totalParticipation *
-                100
-              ).toFixed(2) + '%'
+            ? ((validated / totalParticipation) * 100).toFixed(2) + '%'
             : '0.00%';
 
         return {
-          validatorId: v.validatorId,
-          reputation: v.reputationScore ?? 0,
-          status: v.status || 'unknown',
-          blocksProposed: v.blocksProposed ?? 0,
-          blocksValidated: v.blocksValidated ?? 0,
+          validatorId:
+            v.validatorId ||
+            v.id ||
+            'unknown',
+
+          reputation:
+            v.reputationScore ??
+            v.reputation ??
+            0,
+
+          status:
+            v.status ||
+            'unknown',
+
+          blocksProposed:
+            v.blocksProposed || 0,
+
+          blocksValidated:
+            v.blocksValidated || 0,
+
+          missedRounds:
+            v.missedRounds || 0,
 
           uptime:
             typeof v.getUptime === 'function'
               ? v.getUptime()
-              : 0,
+              : null,
 
           participationRate,
 
@@ -224,7 +211,7 @@ function initializeAPI(consensus) {
         };
       });
 
-      return res.json({
+      res.json({
         success: true,
 
         totalValidators:
@@ -240,29 +227,28 @@ function initializeAPI(consensus) {
       });
 
     } catch (error) {
+      console.error('Validators API error:', error);
 
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: error.message
       });
-
     }
   });
 
 
-  // ============================================================
-  // SINGLE VALIDATOR
-  // GET /api/validators/:id
-  // ============================================================
-
+  /**
+   * GET /api/validators/:id
+   * Get specific validator
+   */
   router.get('/validators/:id', (req, res) => {
-
     try {
+      const id = req.params.id;
 
       const validator =
-        consensus.getValidator(
-          req.params.id
-        );
+        typeof consensus.getValidator === 'function'
+          ? consensus.getValidator(id)
+          : null;
 
       if (!validator) {
         return res.status(404).json({
@@ -271,502 +257,643 @@ function initializeAPI(consensus) {
         });
       }
 
-      const stats =
-        consensus.getValidatorStats(
-          req.params.id
-        );
+      let stats = validator;
 
-      return res.json({
-        success: true,
-
-        validator: {
-          ...stats,
-
-          rewardHistory:
-            Array.isArray(stats.rewardHistory)
-              ? stats.rewardHistory.slice(-20)
-              : [],
-
-          penaltyHistory:
-            Array.isArray(stats.penaltyHistory)
-              ? stats.penaltyHistory.slice(-20)
-              : []
-        }
-      });
-
-    } catch (error) {
-
-      return res.status(500).json({
-        success: false,
-        error: error.message
-      });
-
-    }
-  });
-
-
-  // ============================================================
-  // VALIDATOR REPUTATION
-  // GET /api/validators/:id/reputation
-  // ============================================================
-
-  router.get(
-    '/validators/:id/reputation',
-    (req, res) => {
-
-      try {
-
-        const validator =
-          consensus.getValidator(
-            req.params.id
-          );
-
-        if (!validator) {
-          return res.status(404).json({
-            success: false,
-            error: 'Validator not found'
-          });
-        }
-
-        const breakdown =
-          consensus.reputationCalculator
-            .getReputationBreakdown(
-              validator
-            );
-
-        return res.json({
-          success: true,
-          reputation: breakdown
-        });
-
-      } catch (error) {
-
-        return res.status(500).json({
-          success: false,
-          error: error.message
-        });
-
+      if (
+        typeof consensus.getValidatorStats === 'function'
+      ) {
+        stats =
+          consensus.getValidatorStats(id);
       }
-    }
-  );
 
-
-  // ============================================================
-  // CONSENSUS
-  // GET /api/consensus
-  // ============================================================
-
-  router.get('/consensus', (req, res) => {
-
-    try {
-
-      const status =
-        consensus.getConsensusStatus();
-
-      return res.json({
+      res.json({
         success: true,
-        consensus: status
+
+        validator: stats
       });
 
     } catch (error) {
+      console.error('Validator details error:', error);
 
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: error.message
       });
-
     }
   });
 
 
-  // ============================================================
-  // LATEST CONSENSUS
-  // GET /api/consensus/latest
-  // ============================================================
+  /**
+   * GET /api/validators/:id/reputation
+   * Get reputation breakdown
+   */
+  router.get('/validators/:id/reputation', (req, res) => {
+    try {
+      const id = req.params.id;
 
-  router.get(
-    '/consensus/latest',
-    (req, res) => {
+      const validator =
+        typeof consensus.getValidator === 'function'
+          ? consensus.getValidator(id)
+          : null;
 
-      try {
+      if (!validator) {
+        return res.status(404).json({
+          success: false,
+          error: 'Validator not found'
+        });
+      }
 
-        const networkStatus =
-          consensus.getNetworkStatus();
+      let breakdown = {
+        validatorId: id,
+        reputation:
+          validator.reputationScore ??
+          validator.reputation ??
+          0
+      };
 
-        return res.json({
+      if (
+        consensus.reputationCalculator &&
+        typeof consensus.reputationCalculator
+          .getReputationBreakdown === 'function'
+      ) {
+        breakdown =
+          consensus.reputationCalculator
+            .getReputationBreakdown(validator);
+      }
 
-          success: true,
+      res.json({
+        success: true,
 
-          consensus:
+        reputation:
+          breakdown
+      });
+
+    } catch (error) {
+      console.error('Reputation API error:', error);
+
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+
+  /* =========================================================
+     CONSENSUS
+     ========================================================= */
+
+  /**
+   * GET /api/consensus
+   * Current consensus status
+   */
+  router.get('/consensus', (req, res) => {
+    try {
+      let status = {};
+
+      if (
+        typeof consensus.getConsensusStatus ===
+        'function'
+      ) {
+        status =
+          consensus.getConsensusStatus();
+      }
+
+      res.json({
+        success: true,
+
+        consensus:
+          status
+      });
+
+    } catch (error) {
+      console.error('Consensus API error:', error);
+
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+
+  /**
+   * GET /api/consensus/latest
+   * Latest consensus round
+   */
+  router.get('/consensus/latest', (req, res) => {
+    try {
+      const network =
+        typeof consensus.getNetworkStatus === 'function'
+          ? consensus.getNetworkStatus()
+          : {};
+
+      res.json({
+        success: true,
+
+        consensus:
+          'proof-of-reputation',
+
+        activeValidators:
+          network.activeValidators ?? 0,
+
+        totalValidators:
+          network.totalValidators ?? 0,
+
+        averageReputation:
+          network.averageReputation ?? 0,
+
+        currentRound:
+          network.currentRound ?? 0,
+
+        currentProposer:
+          network.currentProposer ?? null,
+
+        latestBlockNumber:
+          network.latestBlockNumber ?? 0,
+
+        approvalRate:
+          network.approvalRate ?? 0,
+
+        timestamp:
+          network.timestamp ||
+          new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error(
+        'Latest consensus error:',
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+
+  /**
+   * GET /api/consensus/network
+   * Network-wide statistics
+   */
+  router.get('/consensus/network', (req, res) => {
+    try {
+      const network =
+        typeof consensus.getNetworkStatus === 'function'
+          ? consensus.getNetworkStatus()
+          : {};
+
+      let validators = [];
+
+      if (
+        typeof consensus.getAllValidators ===
+        'function'
+      ) {
+        validators =
+          consensus.getAllValidators();
+      }
+
+      let ranking = [];
+
+      if (
+        consensus.reputationCalculator &&
+        typeof consensus.reputationCalculator
+          .rankValidators === 'function'
+      ) {
+        ranking =
+          consensus.reputationCalculator
+            .rankValidators(validators);
+      }
+
+      res.json({
+        success: true,
+
+        network: {
+          algorithm:
             'proof-of-reputation',
 
-          activeValidators:
-            networkStatus.activeValidators,
-
           totalValidators:
-            networkStatus.totalValidators,
+            network.totalValidators ?? validators.length,
+
+          activeValidators:
+            network.activeValidators ??
+            validators.filter(
+              v => v.status === 'active'
+            ).length,
+
+          suspendedValidators:
+            network.suspendedValidators ?? 0,
 
           averageReputation:
-            networkStatus.averageReputation,
+            network.averageReputation ?? 0,
 
-          currentRound:
-            networkStatus.currentRound,
+          totalRounds:
+            network.currentRound ?? 0,
 
-          currentProposer:
-            networkStatus.currentProposer,
+          totalBlocks:
+            network.latestBlockNumber ?? 0,
 
-          latestBlockNumber:
-            networkStatus.latestBlockNumber,
+          averageApprovalRate:
+            network.approvalRate ?? 0,
 
-          approvalRate:
-            networkStatus.approvalRate,
+          topValidators:
+            ranking.slice(0, 10),
+
+          votingStats:
+            network.votingStats || {},
 
           timestamp:
-            networkStatus.timestamp
+            network.timestamp ||
+            new Date().toISOString()
+        }
+      });
 
-        });
+    } catch (error) {
+      console.error(
+        'Network statistics error:',
+        error
+      );
 
-      } catch (error) {
-
-        return res.status(500).json({
-          success: false,
-          error: error.message
-        });
-
-      }
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
     }
-  );
+  });
 
 
-  // ============================================================
-  // NETWORK
-  // GET /api/consensus/network
-  // ============================================================
-
-  router.get(
-    '/consensus/network',
-    (req, res) => {
-
-      try {
-
-        const networkStatus =
-          consensus.getNetworkStatus();
-
-        const validators =
-          consensus.getAllValidators();
-
-        const ranking =
-          consensus.reputationCalculator
-            .rankValidators(
-              validators
-            );
-
-        return res.json({
-
-          success: true,
-
-          network: {
-
-            algorithm:
-              'proof-of-reputation',
-
-            totalValidators:
-              networkStatus.totalValidators,
-
-            activeValidators:
-              networkStatus.activeValidators,
-
-            suspendedValidators:
-              networkStatus.suspendedValidators,
-
-            averageReputation:
-              networkStatus.averageReputation,
-
-            totalRounds:
-              networkStatus.currentRound,
-
-            totalBlocks:
-              networkStatus.latestBlockNumber,
-
-            averageApprovalRate:
-              networkStatus.approvalRate,
-
-            topValidators:
-              ranking.slice(0, 10),
-
-            votingStats:
-              networkStatus.votingStats,
-
-            timestamp:
-              networkStatus.timestamp
-          }
-
-        });
-
-      } catch (error) {
-
-        return res.status(500).json({
-          success: false,
-          error: error.message
-        });
-
-      }
-    }
-  );
-
-
-  // ============================================================
-  // PENALTIES
-  // GET /api/consensus/penalties
-  // ============================================================
-
-  router.get(
-    '/consensus/penalties',
-    (req, res) => {
-
-      try {
-
-        const report =
-          consensus.penaltyEngine
-            .getPenaltyReport(50);
-
-        return res.json({
-          success: true,
-          penalties: report
-        });
-
-      } catch (error) {
-
-        return res.status(500).json({
-          success: false,
-          error: error.message
-        });
-
-      }
-    }
-  );
-
-
-  // ============================================================
-  // REWARDS
-  // GET /api/consensus/rewards
-  // ============================================================
-
-  router.get(
-    '/consensus/rewards',
-    (req, res) => {
-
-      try {
-
-        const report =
-          consensus.penaltyEngine
-            .getRewardReport(50);
-
-        return res.json({
-          success: true,
-          rewards: report
-        });
-
-      } catch (error) {
-
-        return res.status(500).json({
-          success: false,
-          error: error.message
-        });
-
-      }
-    }
-  );
-
-
-  // ============================================================
-  // SYBIL CHECK
-  // GET /api/consensus/sybil-check
-  // ============================================================
-
-  router.get(
-    '/consensus/sybil-check',
-    (req, res) => {
-
-      try {
-
-        const sybilCheck =
-          consensus.checkSybilResistance();
-
-        return res.json({
-          success: true,
-          sybilResistance: sybilCheck
-        });
-
-      } catch (error) {
-
-        return res.status(500).json({
-          success: false,
-          error: error.message
-        });
-
-      }
-    }
-  );
-
-
-  // ============================================================
-  // REPUTATION RANKING
-  // GET /api/consensus/reputation-ranking
-  // ============================================================
-
+  /**
+   * GET /api/consensus/reputation-ranking
+   * Validators ranked by reputation
+   */
   router.get(
     '/consensus/reputation-ranking',
     (req, res) => {
 
       try {
-
         const validators =
-          consensus.getAllValidators();
+          typeof consensus.getAllValidators ===
+          'function'
+            ? consensus.getAllValidators()
+            : [];
 
-        const ranking =
-          consensus.reputationCalculator
-            .rankValidators(
-              validators
+        let ranking = [];
+
+        if (
+          consensus.reputationCalculator &&
+          typeof consensus.reputationCalculator
+            .rankValidators === 'function'
+        ) {
+          ranking =
+            consensus.reputationCalculator
+              .rankValidators(validators);
+        } else {
+          ranking =
+            [...validators].sort(
+              (a, b) =>
+                Number(
+                  b.reputationScore ||
+                  b.reputation ||
+                  0
+                ) -
+                Number(
+                  a.reputationScore ||
+                  a.reputation ||
+                  0
+                )
             );
+        }
 
-        return res.json({
-
+        res.json({
           success: true,
 
           ranking:
             ranking.map((r, index) => ({
-
               rank:
                 index + 1,
 
               validatorId:
-                r.validatorId,
+                r.validatorId ||
+                r.id,
 
               reputation:
-                r.reputation,
+                r.reputation ??
+                r.reputationScore ??
+                0,
 
               status:
                 validators.find(
                   v =>
-                    v.validatorId ===
-                    r.validatorId
-                )?.status || 'unknown'
-
+                    (v.validatorId || v.id) ===
+                    (r.validatorId || r.id)
+                )?.status ||
+                'unknown'
             }))
-
         });
 
       } catch (error) {
+        console.error(
+          'Reputation ranking error:',
+          error
+        );
 
-        return res.status(500).json({
+        res.status(500).json({
           success: false,
           error: error.message
         });
-
       }
     }
   );
 
 
-  // ============================================================
-  // HEALTH
-  // GET /api/health
-  // ============================================================
+  /* =========================================================
+     PENALTIES
+     ========================================================= */
 
+  /**
+   * GET /api/consensus/penalties
+   */
+  router.get(
+    '/consensus/penalties',
+    (req, res) => {
+
+      try {
+        let report = [];
+
+        if (
+          consensus.penaltyEngine &&
+          typeof consensus.penaltyEngine
+            .getPenaltyReport === 'function'
+        ) {
+          report =
+            consensus.penaltyEngine
+              .getPenaltyReport(50);
+        }
+
+        res.json({
+          success: true,
+
+          penalties:
+            report
+        });
+
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    }
+  );
+
+
+  /* =========================================================
+     REWARDS
+     ========================================================= */
+
+  /**
+   * GET /api/consensus/rewards
+   */
+  router.get(
+    '/consensus/rewards',
+    (req, res) => {
+
+      try {
+        let report = [];
+
+        if (
+          consensus.penaltyEngine &&
+          typeof consensus.penaltyEngine
+            .getRewardReport === 'function'
+        ) {
+          report =
+            consensus.penaltyEngine
+              .getRewardReport(50);
+        }
+
+        res.json({
+          success: true,
+
+          rewards:
+            report
+        });
+
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    }
+  );
+
+
+  /* =========================================================
+     SYBIL RESISTANCE
+     ========================================================= */
+
+  /**
+   * GET /api/consensus/sybil-check
+   */
+  router.get(
+    '/consensus/sybil-check',
+    (req, res) => {
+
+      try {
+        let result = {
+          status: 'unknown'
+        };
+
+        if (
+          typeof consensus.checkSybilResistance ===
+          'function'
+        ) {
+          result =
+            consensus.checkSybilResistance();
+        }
+
+        res.json({
+          success: true,
+
+          sybilResistance:
+            result
+        });
+
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    }
+  );
+
+
+  /* =========================================================
+     HEALTH
+     ========================================================= */
+
+  /**
+   * GET /api/health
+   */
   router.get('/health', (req, res) => {
 
     try {
+      const network =
+        typeof consensus.getNetworkStatus === 'function'
+          ? consensus.getNetworkStatus()
+          : {};
 
-      const status =
-        consensus.getNetworkStatus();
-
-      return res.json({
-
+      res.json({
         success: true,
 
-        status: 'healthy',
+        status:
+          'healthy',
+
+        blockchain:
+          'TMR Blockchain',
 
         algorithm:
-          'proof-of-reputation',
+          'Proof-of-Reputation',
 
         validators:
-          status.activeValidators,
+          network.activeValidators ?? 0,
 
         consensus:
-          status.currentRound > 0
+          (network.currentRound || 0) > 0
             ? 'running'
-            : 'initializing'
+            : 'initializing',
 
+        latestBlock:
+          network.latestBlockNumber ?? 0,
+
+        timestamp:
+          new Date().toISOString()
       });
 
     } catch (error) {
 
-      return res.status(503).json({
-
+      res.status(503).json({
         success: false,
 
-        status: 'unhealthy',
+        status:
+          'unhealthy',
 
-        error: error.message
-
+        error:
+          error.message
       });
-
     }
   });
 
 
-  // ============================================================
-  // CONFIG
-  // GET /api/config
-  // ============================================================
+  /* =========================================================
+     PUBLIC CONFIGURATION
+     ========================================================= */
 
+  /**
+   * GET /api/config
+   */
   router.get('/config', (req, res) => {
 
     try {
+      const config =
+        consensus.config || {};
 
-      return res.json({
-
+      res.json({
         success: true,
 
         config: {
-
           algorithm:
-            consensus.config?.algorithm,
+            config.algorithm ||
+            'proof-of-reputation',
 
           weights:
-            consensus.config?.weights,
+            config.weights || {},
 
           rewards:
-            consensus.config?.rewards,
+            config.rewards || {},
 
           penalties:
-            consensus.config?.penalties,
+            config.penalties || {},
 
           consensus:
-            consensus.config?.consensus,
+            config.consensus || {},
 
           antiGaming:
-            consensus.config?.antiGaming
-
+            config.antiGaming || {}
         }
-
       });
 
     } catch (error) {
 
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: error.message
       });
-
     }
   });
 
+
+  /* =========================================================
+     API INFORMATION
+     ========================================================= */
+
+  /**
+   * GET /api
+   * API information
+   */
+  router.get('/', (req, res) => {
+
+    res.json({
+      success: true,
+
+      name:
+        'TMR Blockchain API',
+
+      version:
+        '1.0.0',
+
+      blockchain:
+        'TMR Blockchain',
+
+      consensus:
+        'Proof-of-Reputation',
+
+      endpoints: [
+        '/api/health',
+        '/api/validators',
+        '/api/validators/:id',
+        '/api/validators/:id/reputation',
+        '/api/transactions/:hash',
+        '/api/consensus',
+        '/api/consensus/latest',
+        '/api/consensus/network',
+        '/api/consensus/reputation-ranking',
+        '/api/consensus/penalties',
+        '/api/consensus/rewards',
+        '/api/consensus/sybil-check',
+        '/api/config'
+      ],
+
+      timestamp:
+        new Date().toISOString()
+    });
+  });
+
+
+  /* =========================================================
+     RETURN ROUTER
+     ========================================================= */
 
   return router;
 }
 
+
+/**
+ * Export API initializer
+ */
 module.exports = {
   initializeAPI
 };
