@@ -1,40 +1,37 @@
 {
   "name": "tmr-blockchain-por",
-  "version": "1.0.0",
-  "description": "TMR Blockchain with Proof of Reputation Consensus",
-  "main": "consensus.js",
+  "version": "1.1.0",
+  "description": "TMR Blockchain with Proof of Reputation Consensus and persistent PostgreSQL storage",
+  "main": "server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "test": "jest consensus.test.js --verbose",
-    "demo": "node demo.js",
     "dev": "nodemon server.js",
-    "lint": "eslint .",
-    "format": "prettier --write ."
+    "db:init": "node scripts/init-db.js"
   },
   "keywords": [
     "blockchain",
-    "consensus",
     "proof-of-reputation",
-    "validator",
-    "cryptocurrency"
+    "tmr",
+    "postgresql",
+    "explorer"
   ],
   "author": "TMR Blockchain Contributors",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
     "axios": "^1.6.0",
-    "dotenv": "^16.3.1",
-    "cors": "^2.8.5",
     "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "pg": "^8.16.3",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "eslint": "^8.49.0",
     "jest": "^29.7.0",
     "nodemon": "^3.0.1",
-    "eslint": "^8.49.0",
-    "prettier": "^3.0.3",
-    "@types/node": "^20.5.0"
+    "prettier": "^3.0.3"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -43,9 +40,5 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Meeru-Group/TMR-Blockchain.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Meeru-Group/TMR-Blockchain/issues"
-  },
-  "homepage": "https://github.com/Meeru-Group/TMR-Blockchain#readme"
+  }
 }

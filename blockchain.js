@@ -1,221 +1,405 @@
-/**
- * TMR Explorer blockchain data layer.
- *
- * This is an in-memory blockchain used by the deployed API until a real
- * persistent TMR node/RPC is connected. It provides stable explorer-shaped
- * endpoints for blocks, transactions and addresses.
- */
+// ============================================================
+// TMR BLOCKCHAIN - PERSISTENT CHAIN DATA LAYER
+// Uses PostgreSQL. No demo blocks/transactions are generated.
+// ============================================================
 
-const crypto = require('crypto');
+const crypto = require("crypto");
+const db = require("./database");
 
 class TMRBlockchain {
-  constructor() {
-    this.chain = [];
-    this.pendingTransactions = [];
-    this.transactionIndex = new Map();
-    this.createGenesisBlock();
-  }
-
-  hashBlock(block) {
-    const payload = JSON.stringify({
-      height: block.height,
-      previousHash: block.previousHash,
-      timestamp: block.timestamp,
-      proposer: block.proposer,
-      transactions: block.transactions
-    });
-    return crypto.createHash('sha256').update(payload).digest('hex');
+  async initialize() {
+    await db.initializeDatabase();
   }
 
   hashTransaction(tx) {
-    const payload = JSON.stringify({
-      from: tx.from,
-      to: tx.to,
-      amount: tx.amount,
-      nonce: tx.nonce,
-      timestamp: tx.timestamp,
-      data: tx.data || null
-    });
-    return crypto.createHash('sha256').update(payload).digest('hex');
+    return crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify({
+          from: tx.from,
+          to: tx.to,
+          amount: tx.amount,
+          nonce: tx.nonce,
+          timestamp: tx.timestamp,
+          data: tx.data || null
+        })
+      )
+      .digest("hex");
   }
 
-  createGenesisBlock() {
-    const block = {
-      height: 0,
-      hash: '0'.repeat(64),
-      previousHash: null,
-      timestamp: new Date('2026-08-13T00:00:00.000Z').toISOString(),
-      proposer: 'genesis',
-      transactions: [],
-      transactionCount: 0,
-      consensus: {
-        algorithm: 'proof-of-reputation',
-        status: 'finalized'
-      }
-    };
-
-    this.chain.push(block);
+  hashBlock(block) {
+    return crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify({
+          height: block.height,
+          previousHash: block.previousHash,
+          timestamp: block.timestamp,
+          proposer: block.proposer,
+          transactions: block.transactions
+        })
+      )
+      .digest("hex");
   }
 
-  addTransaction({ from, to, amount, nonce = 0, data = null }) {
-    if (!from || !to) throw new Error('from and to are required');
-    if (!Number.isFinite(Number(amount)) || Number(amount) < 0) {
-      throw new Error('amount must be a non-negative number');
+  async getLatestBlock() {
+    const result = await db.query(
+      `SELECT
+        height,
+        hash,
+        previous_hash AS "previousHash",
+        timestamp,
+        proposer,
+        validator,
+        transactions,
+        transaction_count AS "transactionCount",
+        consensus,
+        status
+       FROM blocks
+       ORDER BY height DESC
+       LIMIT 1`
+    );
+    return result.rows[0] || null;
+  }
+
+  async getBlocks(limit = 20) {
+    const safeLimit = Math.min(
+      Math.max(Number(limit) || 20, 1),
+      100
+    );
+
+    const result = await db.query(
+      `SELECT
+        height,
+        hash,
+        previous_hash AS "previousHash",
+        timestamp,
+        proposer,
+        validator,
+        transactions,
+        transaction_count AS "transactionCount",
+        consensus,
+        status
+       FROM blocks
+       ORDER BY height DESC
+       LIMIT $1`,
+      [safeLimit]
+    );
+
+    return result.rows;
+  }
+
+  async getBlock(heightOrHash) {
+    let result;
+
+    if (/^\d+$/.test(String(heightOrHash))) {
+      result = await db.query(
+        `SELECT
+          height,
+          hash,
+          previous_hash AS "previousHash",
+          timestamp,
+          proposer,
+          validator,
+          transactions,
+          transaction_count AS "transactionCount",
+          consensus,
+          status
+         FROM blocks
+         WHERE height = $1
+         LIMIT 1`,
+        [Number(heightOrHash)]
+      );
+    } else {
+      result = await db.query(
+        `SELECT
+          height,
+          hash,
+          previous_hash AS "previousHash",
+          timestamp,
+          proposer,
+          validator,
+          transactions,
+          transaction_count AS "transactionCount",
+          consensus,
+          status
+         FROM blocks
+         WHERE hash = $1
+         LIMIT 1`,
+        [heightOrHash]
+      );
     }
 
-    const tx = {
-      hash: null,
-      from,
-      to,
-      amount: Number(amount),
-      nonce: Number(nonce),
-      timestamp: new Date().toISOString(),
-      data
-    };
-
-    tx.hash = this.hashTransaction(tx);
-    this.pendingTransactions.push(tx);
-    return tx;
+    return result.rows[0] || null;
   }
 
-  createBlock(transactions, proposer = 'por-validator-1') {
-    const previous = this.chain[this.chain.length - 1];
-    const block = {
-      height: previous.height + 1,
-      hash: null,
-      previousHash: previous.hash,
-      timestamp: new Date().toISOString(),
-      proposer,
-      transactions,
-      transactionCount: transactions.length,
-      consensus: {
-        algorithm: 'proof-of-reputation',
-        status: 'finalized',
-        proposer
-      }
-    };
+  async getTransaction(hash) {
+    const result = await db.query(
+      `SELECT
+        hash,
+        from_address AS "from",
+        to_address AS "to",
+        amount::text AS amount,
+        nonce,
+        timestamp,
+        data,
+        block_height AS "blockHeight",
+        block_hash AS "blockHash",
+        status
+       FROM transactions
+       WHERE hash = $1
+       LIMIT 1`,
+      [hash]
+    );
 
-    block.hash = this.hashBlock(block);
-    this.chain.push(block);
-
-    for (const tx of transactions) {
-      this.transactionIndex.set(tx.hash, {
-        ...tx,
-        blockHeight: block.height,
-        blockHash: block.hash,
-        status: 'confirmed'
-      });
-    }
-
-    return block;
+    return result.rows[0] || null;
   }
 
-  minePendingBlock(proposer = 'por-validator-1') {
-    const transactions = this.pendingTransactions.splice(0);
-    return this.createBlock(transactions, proposer);
+  async getTransactions(limit = 50) {
+    const safeLimit = Math.min(
+      Math.max(Number(limit) || 50, 1),
+      100
+    );
+
+    const result = await db.query(
+      `SELECT
+        hash,
+        from_address AS "from",
+        to_address AS "to",
+        amount::text AS amount,
+        nonce,
+        timestamp,
+        data,
+        block_height AS "blockHeight",
+        block_hash AS "blockHash",
+        status
+       FROM transactions
+       ORDER BY timestamp DESC
+       LIMIT $1`,
+      [safeLimit]
+    );
+
+    return result.rows;
   }
 
-  seedDemoData() {
-    if (this.chain.length > 1) return;
+  async getAddress(address) {
+    const result = await db.query(
+      `SELECT
+        hash,
+        from_address AS "from",
+        to_address AS "to",
+        amount::text AS amount,
+        nonce,
+        timestamp,
+        data,
+        block_height AS "blockHeight",
+        block_hash AS "blockHash",
+        status
+       FROM transactions
+       WHERE from_address = $1 OR to_address = $1
+       ORDER BY timestamp DESC
+       LIMIT 50`,
+      [address]
+    );
 
-    const tx1 = this.addTransaction({
-      from: 'tmr1genesis',
-      to: 'tmr1validator001',
-      amount: 1000,
-      nonce: 1,
-      data: { type: 'validator-reward' }
-    });
-
-    const tx2 = this.addTransaction({
-      from: 'tmr1validator001',
-      to: 'tmr1user001',
-      amount: 250,
-      nonce: 1,
-      data: { type: 'transfer' }
-    });
-
-    this.minePendingBlock('por-validator-1');
-
-    const tx3 = this.addTransaction({
-      from: 'tmr1user001',
-      to: 'tmr1user002',
-      amount: 50,
-      nonce: 1,
-      data: { type: 'transfer' }
-    });
-
-    const tx4 = this.addTransaction({
-      from: 'tmr1validator002',
-      to: 'tmr1user003',
-      amount: 500,
-      nonce: 1,
-      data: { type: 'validator-reward' }
-    });
-
-    this.minePendingBlock('por-validator-2');
-
-    // Keep references visible for debugging and explorer tests.
-    this.demoTransactionHashes = [tx1.hash, tx2.hash, tx3.hash, tx4.hash];
-  }
-
-  getLatestBlock() {
-    return this.chain[this.chain.length - 1];
-  }
-
-  getBlocks(limit = 20) {
-    const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
-    return this.chain.slice(-safeLimit).reverse();
-  }
-
-  getBlock(height) {
-    const numericHeight = Number(height);
-    if (!Number.isInteger(numericHeight) || numericHeight < 0) return null;
-    return this.chain.find(block => block.height === numericHeight) || null;
-  }
-
-  getTransaction(hash) {
-    return this.transactionIndex.get(hash) || null;
-  }
-
-  getAddress(address) {
-    const transactions = [];
     let balance = 0;
-
-    for (const tx of this.transactionIndex.values()) {
-      if (tx.from === address) {
-        balance -= tx.amount;
-        transactions.push(tx);
-      }
-      if (tx.to === address) {
-        balance += tx.amount;
-        transactions.push(tx);
-      }
+    for (const tx of result.rows) {
+      const amount = Number(tx.amount);
+      if (tx.to === address) balance += amount;
+      if (tx.from === address) balance -= amount;
     }
-
-    transactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     return {
       address,
       balance,
-      transactionCount: transactions.length,
-      transactions: transactions.slice(0, 50)
+      transactionCount: result.rows.length,
+      transactions: result.rows
     };
   }
 
-  getNetworkStats() {
-    const latest = this.getLatestBlock();
-    const transactionCount = Array.from(this.transactionIndex.values()).length;
+  async getNetworkStats() {
+    const [latest, blockCount, txCount, pending] =
+      await Promise.all([
+        this.getLatestBlock(),
+        db.query("SELECT COUNT(*)::int AS count FROM blocks"),
+        db.query("SELECT COUNT(*)::int AS count FROM transactions"),
+        db.query(
+          "SELECT COUNT(*)::int AS count FROM transactions WHERE status = 'pending'"
+        )
+      ]);
 
     return {
-      chain: 'TMR Blockchain',
-      algorithm: 'proof-of-reputation',
-      height: latest.height,
-      latestBlockHash: latest.hash,
-      totalBlocks: this.chain.length,
-      totalTransactions: transactionCount,
-      pendingTransactions: this.pendingTransactions.length,
+      chain: "TMR Blockchain",
+      algorithm: "proof-of-reputation",
+      height: latest ? Number(latest.height) : 0,
+      latestBlockHash: latest ? latest.hash : null,
+      totalBlocks: blockCount.rows[0].count,
+      totalTransactions: txCount.rows[0].count,
+      pendingTransactions: pending.rows[0].count,
       timestamp: new Date().toISOString()
     };
+  }
+
+  async addTransaction({ from, to, amount, nonce = 0, data = null }) {
+    if (!from || !to) {
+      throw new Error("from and to are required");
+    }
+
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount < 0) {
+      throw new Error("amount must be a non-negative number");
+    }
+
+    const timestamp = new Date().toISOString();
+    const tx = {
+      from,
+      to,
+      amount: numericAmount,
+      nonce: Number(nonce),
+      timestamp,
+      data
+    };
+
+    const hash = this.hashTransaction(tx);
+
+    await db.query(
+      `INSERT INTO transactions
+        (hash, from_address, to_address, amount, nonce, timestamp, data, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,'pending')
+       ON CONFLICT (hash) DO NOTHING`,
+      [
+        hash,
+        from,
+        to,
+        numericAmount,
+        Number(nonce),
+        timestamp,
+        JSON.stringify(data)
+      ]
+    );
+
+    return { hash, ...tx, status: "pending" };
+  }
+
+  async createBlock(transactionHashes = [], proposer = "por-validator-001") {
+    return db.withTransaction(async (client) => {
+      // Serialize block creation so two requests cannot create the same height.
+      await client.query(
+        "SELECT pg_advisory_xact_lock($1)",
+        [872341]
+      );
+
+      const latestResult = await client.query(
+        `SELECT height, hash
+         FROM blocks
+         ORDER BY height DESC
+         LIMIT 1`
+      );
+
+      const previous = latestResult.rows[0] || {
+        height: 0,
+        hash: "0".repeat(64)
+      };
+
+      const txResult = transactionHashes.length
+        ? await client.query(
+            `SELECT
+              hash,
+              from_address AS "from",
+              to_address AS "to",
+              amount::text AS amount,
+              nonce,
+              timestamp,
+              data
+             FROM transactions
+             WHERE hash = ANY($1::text[])
+               AND status = 'pending'
+             ORDER BY timestamp ASC`,
+            [transactionHashes]
+          )
+        : await client.query(
+            `SELECT
+              hash,
+              from_address AS "from",
+              to_address AS "to",
+              amount::text AS amount,
+              nonce,
+              timestamp,
+              data
+             FROM transactions
+             WHERE status = 'pending'
+             ORDER BY timestamp ASC
+             LIMIT 100`
+          );
+
+      const transactions = txResult.rows;
+      const height = Number(previous.height) + 1;
+      const timestamp = new Date().toISOString();
+
+      const blockForHash = {
+        height,
+        previousHash: previous.hash,
+        timestamp,
+        proposer,
+        transactions
+      };
+
+      const hash = this.hashBlock(blockForHash);
+
+      const block = {
+        ...blockForHash,
+        hash,
+        validator: proposer,
+        transactionCount: transactions.length,
+        consensus: {
+          algorithm: "proof-of-reputation",
+          status: "finalized",
+          proposer
+        },
+        status: "finalized"
+      };
+
+      await client.query(
+        `INSERT INTO blocks
+          (height, hash, previous_hash, timestamp, proposer, validator,
+           transactions, transaction_count, consensus, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::jsonb,$10)`,
+        [
+          height,
+          hash,
+          previous.hash,
+          timestamp,
+          proposer,
+          proposer,
+          JSON.stringify(transactions),
+          transactions.length,
+          JSON.stringify(block.consensus),
+          "finalized"
+        ]
+      );
+
+      for (const tx of transactions) {
+        await client.query(
+          `UPDATE transactions
+           SET block_height = $1,
+               block_hash = $2,
+               status = 'confirmed'
+           WHERE hash = $3`,
+          [height, hash, tx.hash]
+        );
+      }
+
+      await client.query(
+        `UPDATE validators
+         SET blocks_proposed = blocks_proposed + 1,
+             blocks_validated = blocks_validated + 1,
+             last_active = NOW()
+         WHERE validator_id = $1`,
+        [proposer]
+      );
+
+      return block;
+    });
   }
 }
 
