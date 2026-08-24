@@ -8,7 +8,7 @@
    CONFIG
 ========================================================= */
 
-const API_BASE = "";
+const API_BASE = "https://tmr-blockchain.vercel.app";
 
 /* =========================================================
    HELPERS
