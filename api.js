@@ -16,6 +16,95 @@ const router = express.Router();
  */
 function initializeAPI(consensus) {
   /**
+ * GET /api/transactions/:hash
+ * Get complete transaction details
+ */
+router.get('/transactions/:hash', (req, res) => {
+  try {
+    const hash = req.params.hash;
+
+    let foundTx = null;
+    let foundBlock = null;
+
+    const blocks =
+      typeof consensus.getAllBlocks === 'function'
+        ? consensus.getAllBlocks()
+        : Array.isArray(consensus.blocks)
+          ? consensus.blocks
+          : Array.isArray(consensus.blockchain)
+            ? consensus.blockchain
+            : [];
+
+    for (const block of blocks) {
+      const transactions = Array.isArray(block.transactions)
+        ? block.transactions
+        : [];
+
+      const tx = transactions.find(t =>
+        t &&
+        (
+          t.hash === hash ||
+          t.txHash === hash ||
+          t.id === hash
+        )
+      );
+
+      if (tx) {
+        foundTx = tx;
+        foundBlock = block;
+        break;
+      }
+    }
+
+    if (!foundTx) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transaction not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      hash: foundTx.hash || foundTx.txHash || foundTx.id || hash,
+      status: foundTx.status || foundBlock.status || 'finalized',
+      from: foundTx.from || foundTx.sender || '—',
+      to: foundTx.to || foundTx.recipient || '—',
+      amount: foundTx.amount ?? foundTx.value ?? '—',
+      nonce: foundTx.nonce ?? 0,
+
+      timestamp:
+        foundTx.timestamp ||
+        foundTx.time ||
+        foundBlock.timestamp ||
+        null,
+
+      blockHeight:
+        foundTx.blockHeight ??
+        foundTx.height ??
+        foundBlock.height ??
+        null,
+
+      proposer:
+        foundTx.proposer ||
+        foundBlock.proposer ||
+        null,
+
+      consensus:
+        foundTx.consensus ||
+        foundBlock.consensus ||
+        'Proof-of-Reputation'
+    });
+
+  } catch (error) {
+    console.error('Transaction lookup error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+  /**
    * GET /api/validators
    * Get list of all validators
    */
