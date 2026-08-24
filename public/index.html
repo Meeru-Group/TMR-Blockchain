@@ -1,1 +1,797 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TMR Blockchain Explorer</title><link rel="stylesheet" href="/style.css"></head><body><header><div><b>🔗 TMR Blockchain</b><small>Proof-of-Reputation Explorer</small></div><span id="status">Checking…</span></header><main><section class="hero"><h1>TMR Blockchain Explorer</h1><p>Explore blocks and transactions on the TMR network.</p><div class="search"><input id="q" placeholder="Search block height or transaction hash"><button onclick="search()">Search</button></div><div id="msg"></div></section><section class="stats"><div><small>Latest Block</small><strong id="height">—</strong></div><div><small>Blocks</small><strong id="blocksCount">—</strong></div><div><small>Consensus</small><strong>Proof-of-Reputation</strong></div></section><section class="panel"><div class="title"><h2>Latest Blocks</h2><button onclick="load()">↻ Refresh</button></div><div id="list">Loading…</div></section><section id="detail" class="panel hidden"></section></main><footer>TMR Blockchain Explorer</footer><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TMR Blockchain Explorer</title>
+  <link rel="stylesheet" href="/style.css">
+
+  <style>
+    .validators {
+      display: grid;
+      gap: 14px;
+    }
+
+    .validator {
+      padding: 18px;
+      border: 1px solid #293653;
+      border-radius: 18px;
+      background: #111a2d;
+    }
+
+    .validator-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .validator-id {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .active {
+      color: #6ee7a0;
+    }
+
+    .reputation {
+      font-size: 30px;
+      font-weight: 800;
+      margin: 12px 0;
+    }
+
+    .validator-info {
+      color: #9aa8c2;
+      line-height: 1.8;
+    }
+
+    .validator-stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .mini-stat {
+      padding: 12px;
+      border-radius: 12px;
+      background: #0b1222;
+    }
+
+    .mini-stat small {
+      display: block;
+      color: #8d9ab2;
+    }
+
+    .mini-stat b {
+      display: block;
+      margin-top: 4px;
+    }
+
+    .refresh {
+      margin-left: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <div>
+    <b>🔗 TMR Blockchain</b>
+    <small>Proof-of-Reputation Explorer</small>
+  </div>
+
+  <span id="status">Checking…</span>
+</header>
+
+<main>
+
+  <!-- HERO -->
+  <section class="hero">
+    <h1>TMR Blockchain Explorer</h1>
+
+    <p>
+      Explore blocks, transactions and validators
+      on the TMR network.
+    </p>
+
+    <div class="search">
+      <input
+        id="q"
+        placeholder="Search block height or transaction hash"
+      >
+
+      <button onclick="search()">Search</button>
+    </div>
+
+    <div id="msg"></div>
+  </section>
+
+
+  <!-- NETWORK STATS -->
+  <section class="stats">
+
+    <div>
+      <small>Latest Block</small>
+      <strong id="height">—</strong>
+    </div>
+
+    <div>
+      <small>Blocks</small>
+      <strong id="blocksCount">—</strong>
+    </div>
+
+    <div>
+      <small>Consensus</small>
+      <strong>Proof-of-Reputation</strong>
+    </div>
+
+  </section>
+
+
+  <!-- VALIDATORS -->
+  <section class="panel">
+
+    <div class="title">
+
+      <h2>Validators</h2>
+
+      <button
+        class="refresh"
+        onclick="loadValidators()"
+      >
+        ↻ Refresh
+      </button>
+
+    </div>
+
+    <div id="validatorSummary" class="muted">
+      Loading validators…
+    </div>
+
+    <br>
+
+    <div
+      id="validators"
+      class="validators"
+    >
+      Loading…
+    </div>
+
+  </section>
+
+
+  <!-- LATEST BLOCKS -->
+  <section class="panel">
+
+    <div class="title">
+
+      <h2>Latest Blocks</h2>
+
+      <button onclick="load()">
+        ↻ Refresh
+      </button>
+
+    </div>
+
+    <div id="list">
+      Loading…
+    </div>
+
+  </section>
+
+
+  <!-- DETAILS -->
+  <section
+    id="detail"
+    class="panel hidden">
+  </section>
+
+</main>
+
+
+<footer>
+  TMR Blockchain Explorer
+</footer>
+
+
+<script>
+
+async function api(path) {
+
+  const response = await fetch(path);
+
+  if (!response.ok) {
+    throw new Error(response.status);
+  }
+
+  return response.json();
+}
+
+
+/* ------------------------------
+   NETWORK
+------------------------------ */
+
+async function loadNetwork() {
+
+  try {
+
+    const n = await api('/api/network');
+
+    document.getElementById('status').textContent =
+      '🟢 Online';
+
+    document.getElementById('height').textContent =
+      n.latestHeight ?? '—';
+
+    document.getElementById('blocksCount').textContent =
+      n.count ?? '—';
+
+  } catch (error) {
+
+    document.getElementById('status').textContent =
+      '🔴 Offline';
+
+  }
+}
+
+
+/* ------------------------------
+   VALIDATORS
+------------------------------ */
+
+async function loadValidators() {
+
+  const container =
+    document.getElementById('validators');
+
+  const summary =
+    document.getElementById('validatorSummary');
+
+  container.innerHTML = 'Loading…';
+
+  try {
+
+    const data =
+      await api('/api/validators');
+
+    const validators =
+      data.validators || [];
+
+    summary.textContent =
+      `${data.activeValidators || 0} active / ${data.totalValidators || 0} total validators`;
+
+    if (!validators.length) {
+
+      container.innerHTML =
+        '<p class="muted">No validators found.</p>';
+
+      return;
+    }
+
+
+    container.innerHTML =
+      validators.map(v => {
+
+        const reputation =
+          v.reputation ?? v.reputationScore ?? 0;
+
+        const uptime =
+          v.uptime ?? '0%';
+
+        const participation =
+          v.participationRate ?? '0%';
+
+        return `
+
+          <article class="validator">
+
+            <div class="validator-top">
+
+              <div class="validator-id">
+                🛡️ ${v.validatorId}
+              </div>
+
+              <div class="active">
+                ● ${v.status || 'active'}
+              </div>
+
+            </div>
+
+
+            <div class="reputation">
+              ${reputation}
+              <span class="muted">
+                Reputation
+              </span>
+            </div>
+
+
+            <div class="validator-info">
+
+              Public Key:
+              ${v.publicKey || '—'}
+
+            </div>
+
+
+            <div class="validator-stats">
+
+              <div class="mini-stat">
+
+                <small>Blocks Proposed</small>
+
+                <b>
+                  ${v.blocksProposed ?? 0}
+                </b>
+
+              </div>
+
+
+              <div class="mini-stat">
+
+                <small>Blocks Validated</small>
+
+                <b>
+                  ${v.blocksValidated ?? 0}
+                </b>
+
+              </div>
+
+
+              <div class="mini-stat">
+
+                <small>Uptime</small>
+
+                <b>
+                  ${uptime}
+                </b>
+
+              </div>
+
+
+              <div class="mini-stat">
+
+                <small>Participation</small>
+
+                <b>
+                  ${participation}
+                </b>
+
+              </div>
+
+            </div>
+
+          </article>
+
+        `;
+
+      }).join('');
+
+
+  } catch (error) {
+
+    summary.textContent =
+      'Validator API error';
+
+    container.innerHTML =
+      '<p class="muted">Unable to load validators.</p>';
+
+    console.error(error);
+
+  }
+
+}
+
+
+/* ------------------------------
+   BLOCKS
+------------------------------ */
+
+async function load() {
+
+  try {
+
+    await loadNetwork();
+
+    const data =
+      await api('/api/blocks');
+
+    const blocks =
+      data.blocks || [];
+
+    document.getElementById('list').innerHTML =
+
+      blocks.map(b => `
+
+        <article
+          class="block"
+          onclick="show(${b.height})"
+        >
+
+          <div class="row">
+
+            <b>
+              Block #${b.height}
+            </b>
+
+            <span class="ok">
+              ${b.status}
+            </span>
+
+          </div>
+
+          <div class="hash">
+            ${short(b.hash)}
+          </div>
+
+          <div class="muted">
+            ${b.transactionCount}
+            transaction(s)
+            •
+            ${b.proposer}
+          </div>
+
+        </article>
+
+      `).join('')
+
+      || 'No blocks';
+
+
+  } catch (error) {
+
+    document.getElementById('status').textContent =
+      '🔴 Offline';
+
+    document.getElementById('list').textContent =
+      'API connection failed.';
+
+  }
+
+}
+
+
+/* ------------------------------
+   SHORT HASH
+------------------------------ */
+
+function short(hash) {
+
+  if (!hash) {
+    return '—';
+  }
+
+  if (hash.length <= 24) {
+    return hash;
+  }
+
+  return (
+    hash.slice(0, 12)
+    +
+    '…'
+    +
+    hash.slice(-10)
+  );
+
+}
+
+
+/* ------------------------------
+   BLOCK DETAILS
+------------------------------ */
+
+async function show(height) {
+
+  try {
+
+    const b =
+      await api('/api/blocks/' + height);
+
+    const detail =
+      document.getElementById('detail');
+
+    detail.classList.remove('hidden');
+
+
+    detail.innerHTML = `
+
+      <div class="title">
+
+        <h2>
+          Block #${b.height}
+        </h2>
+
+        <button onclick="closeDetail()">
+          Close
+        </button>
+
+      </div>
+
+
+      <p>
+
+        <span class="muted">
+          Hash
+        </span>
+
+        <br>
+
+        <span class="hash">
+          ${b.hash}
+        </span>
+
+      </p>
+
+
+      <p>
+
+        <span class="muted">
+          Previous Hash
+        </span>
+
+        <br>
+
+        <span class="hash">
+          ${b.previousHash}
+        </span>
+
+      </p>
+
+
+      <p>
+
+        <span class="muted">
+          Timestamp
+        </span>
+
+        <br>
+
+        ${b.timestamp}
+
+      </p>
+
+
+      <p>
+
+        <span class="muted">
+          Proposer
+        </span>
+
+        <br>
+
+        ${b.proposer}
+
+      </p>
+
+
+      <p>
+
+        <span class="muted">
+          Status
+        </span>
+
+        <br>
+
+        <span class="ok">
+          ${b.status}
+        </span>
+
+      </p>
+
+
+      <h3>
+        Transactions (${b.transactions.length})
+      </h3>
+
+
+      ${
+        b.transactions.map(t => `
+
+          <div class="block">
+
+            <div class="hash">
+              ${t.hash}
+            </div>
+
+            <div class="muted">
+              ${t.from}
+              →
+              ${t.to}
+              • Amount:
+              ${t.amount}
+            </div>
+
+          </div>
+
+        `).join('')
+
+        ||
+
+        '<p class="muted">No transactions.</p>'
+      }
+
+    `;
+
+
+    detail.scrollIntoView({
+      behavior: 'smooth'
+    });
+
+
+  } catch (error) {
+
+    document.getElementById('msg').textContent =
+      'Block not found';
+
+  }
+
+}
+
+
+/* ------------------------------
+   CLOSE DETAILS
+------------------------------ */
+
+function closeDetail() {
+
+  document
+    .getElementById('detail')
+    .classList
+    .add('hidden');
+
+}
+
+
+/* ------------------------------
+   SEARCH
+------------------------------ */
+
+async function search() {
+
+  const q =
+    document.getElementById('q')
+      .value
+      .trim();
+
+
+  if (!q) {
+    return;
+  }
+
+
+  if (/^\d+$/.test(q)) {
+
+    show(q);
+
+    return;
+
+  }
+
+
+  try {
+
+    const tx =
+      await api(
+        '/api/transactions/'
+        +
+        encodeURIComponent(q)
+      );
+
+
+    const detail =
+      document.getElementById('detail');
+
+    detail.classList.remove('hidden');
+
+
+    detail.innerHTML = `
+
+      <div class="title">
+
+        <h2>
+          Transaction
+        </h2>
+
+        <button onclick="closeDetail()">
+          Close
+        </button>
+
+      </div>
+
+
+      <p>
+
+        <span class="muted">
+          Transaction Hash
+        </span>
+
+        <br>
+
+        <span class="hash">
+          ${tx.hash}
+        </span>
+
+      </p>
+
+
+      <p>
+
+        ${tx.from}
+        →
+        ${tx.to}
+
+        <br>
+
+        Amount:
+        ${tx.amount}
+
+      </p>
+
+
+      <p>
+
+        Status:
+        <span class="ok">
+          ${tx.status}
+        </span>
+
+      </p>
+
+
+      <p>
+
+        Block:
+        ${tx.blockHeight ?? '—'}
+
+      </p>
+
+
+      <p>
+
+        Proposer:
+        ${tx.proposer ?? '—'}
+
+      </p>
+
+
+      <p>
+
+        Consensus:
+        ${tx.consensus || 'Proof-of-Reputation'}
+
+      </p>
+
+    `;
+
+
+    detail.scrollIntoView({
+      behavior: 'smooth'
+    });
+
+
+  } catch (error) {
+
+    document.getElementById('msg').textContent =
+      'Transaction not found';
+
+  }
+
+}
+
+
+/* ------------------------------
+   START
+------------------------------ */
+
+load();
+
+loadValidators();
+
+</script>
+
+</body>
+</html>
