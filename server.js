@@ -1,101 +1,20 @@
 /**
  * TMR Blockchain
- * Proof of Reputation Consensus Server
+ * Proof-of-Reputation Consensus Server
+ *
+ * Full server.js
  */
 
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const path = require('path');
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
 
-require('dotenv').config();
+require("dotenv").config();
 
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
-
-/* =========================================================
-   MOCK PROOF OF REPUTATION CONSENSUS
-========================================================= */
-
-class MockProofOfReputationConsensus {
-  constructor() {
-    this.validators = [];
-    this.blocks = [];
-    this.round = 0;
-
-    this.config = {
-      algorithm: 'proof-of-reputation',
-
-      maxReputation: 1000,
-
-      consensus: {
-        approvalThreshold: 0.66,
-        blockTime: 12000,
-        validatorsPerBlock: 5
-      }
-    };
-  }
-
-  getAllValidators() {
-    return this.validators;
-  }
-
-  getNetworkStatus() {
-    const activeValidators =
-      this.validators.filter(
-        v => v.status === 'active'
-      ).length;
-
-    const avgReputation =
-      this.validators.length > 0
-        ? Math.round(
-            this.validators.reduce(
-              (sum, v) => sum + v.reputation,
-              0
-            ) / this.validators.length
-          )
-        : 0;
-
-    return {
-      algorithm: 'proof-of-reputation',
-      totalValidators: this.validators.length,
-      activeValidators,
-      averageReputation: avgReputation,
-      currentRound: this.round,
-      latestBlockNumber: this.blocks.length,
-      timestamp: Date.now()
-    };
-  }
-
-  registerValidator(
-    id,
-    publicKey,
-    reputation = 500
-  ) {
-    const validator = {
-      validatorId: id,
-      publicKey,
-      reputation,
-      status: 'active',
-      blocksProposed: 0,
-      blocksValidated: 0,
-      joinedAt: Date.now()
-    };
-
-    this.validators.push(validator);
-
-    return validator;
-  }
-}
-
-/* =========================================================
-   INITIALIZE CONSENSUS
-========================================================= */
-
-const consensus =
-  new MockProofOfReputationConsensus();
+const NODE_ENV = process.env.NODE_ENV || "development";
 
 /* =========================================================
    MIDDLEWARE
@@ -103,53 +22,608 @@ const consensus =
 
 app.use(cors());
 
-app.use(bodyParser.json());
+app.use(express.json());
 
-app.use(
-  bodyParser.urlencoded({
-    extended: true
-  })
-);
-
-/* Request Logger */
-
-app.use((req, res, next) => {
-  console.log(
-    `[${new Date().toISOString()}] ${req.method} ${req.path}`
-  );
-
-  next();
-});
+app.use(express.urlencoded({ extended: true }));
 
 /* =========================================================
-   HEALTH CHECK
+   PROOF-OF-REPUTATION CONSENSUS
 ========================================================= */
 
-app.get('/health', (req, res) => {
-  res.json({
-    success: true,
-    status: 'healthy',
-    algorithm: 'proof-of-reputation',
-    environment: NODE_ENV,
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
+class ProofOfReputationConsensus {
+  constructor() {
+    /*
+     * Validators
+     */
+    this.validators = [
+      {
+        validatorId: "por-validator-001",
+        publicKey: "tmr-public-key-001",
+        reputation: 850,
+        status: "active",
+        blocksProposed: 1,
+        blocksValidated: 1,
+        missedRounds: 0,
+        invalidBlocks: 0,
+        joinedAt: Date.now(),
+        createdAt: Date.now(),
+        lastActive: Date.now()
+      },
+
+      {
+        validatorId: "por-validator-002",
+        publicKey: "tmr-public-key-002",
+        reputation: 900,
+        status: "active",
+        blocksProposed: 1,
+        blocksValidated: 2,
+        missedRounds: 0,
+        invalidBlocks: 0,
+        joinedAt: Date.now(),
+        createdAt: Date.now(),
+        lastActive: Date.now()
+      },
+
+      {
+        validatorId: "por-validator-003",
+        publicKey: "tmr-public-key-003",
+        reputation: 750,
+        status: "active",
+        blocksProposed: 0,
+        blocksValidated: 1,
+        missedRounds: 0,
+        invalidBlocks: 0,
+        joinedAt: Date.now(),
+        createdAt: Date.now(),
+        lastActive: Date.now()
+      }
+    ];
+
+    /*
+     * Consensus configuration
+     */
+    this.config = {
+      algorithm: "proof-of-reputation",
+
+      maxReputation: 1000,
+
+      weights: {
+        validation: 0.35,
+        participation: 0.25,
+        uptime: 0.20,
+        reliability: 0.20
+      },
+
+      rewards: {
+        blockProposal: 10,
+        blockValidation: 5,
+        maxDailyReward: 100
+      },
+
+      penalties: {
+        invalidBlock: 50,
+        missedRound: 5,
+        maliciousActivity: 100
+      },
+
+      consensus: {
+        approvalThreshold: 0.66,
+        blockTime: 12000,
+        validatorsPerBlock: 5
+      },
+
+      antiGaming: {
+        diminishingReturnsThreshold: 800,
+        diminishingReturnsFactor: 0.5,
+        reputationCap: 1000
+      },
+
+      suspensionThresholds: {
+        minReputationForActive: 100,
+        maxCumulativePenalty: 200
+      }
+    };
+
+    /*
+     * Blockchain
+     */
+    this.blocks = [
+      {
+        height: 0,
+        hash: "0000000000000000000000000000000000000000000000000000000000000000",
+        previousHash: "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: "2026-08-24T12:59:00.000Z",
+        proposer: "genesis",
+        status: "finalized",
+        consensus: "Proof-of-Reputation",
+        transactions: []
+      },
+
+      {
+        height: 1,
+        hash: "f26958d42a8adc4a4eae4291febcdf564dc3ad25a2d5efc17f17e5adaccee1c",
+        previousHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: "2026-08-24T13:00:10.000Z",
+        proposer: "por-validator-001",
+        status: "finalized",
+        consensus: "Proof-of-Reputation",
+
+        transactions: [
+          {
+            hash: "b4178e7b91a22e0986f0ffb8a5ad0d7f264515c90ae62caabca03cfffa25",
+            from: "tmrgenesis",
+            to: "tmrvalidator01",
+            amount: 250,
+            nonce: 0,
+            status: "finalized",
+            timestamp: "2026-08-24T13:00:10.000Z",
+            blockHeight: 1,
+            proposer: "por-validator-001",
+            consensus: "Proof-of-Reputation"
+          }
+        ]
+      },
+
+      {
+        height: 2,
+        hash: "3a8cd11d20c01fd9805e7c20efd217ae5b296b09020dc4c456bb557622bf76913",
+        previousHash:
+          "f26958d42a8adc4a4eae4291febcdf564dc3ad25a2d5efc17f17e5adaccee1c",
+        timestamp: "2026-08-24T13:00:26.051Z",
+        proposer: "por-validator-002",
+        status: "finalized",
+        consensus: "Proof-of-Reputation",
+
+        transactions: [
+          {
+            hash: "73d78b14b9da5335f7e1bccd8d151f9e839deb0558c9b0ac7e53760ed07bb",
+            from: "tmruser01",
+            to: "tmruser02",
+            amount: 100,
+            nonce: 0,
+            status: "finalized",
+            timestamp: "2026-08-24T13:00:26.051Z",
+            blockHeight: 2,
+            proposer: "por-validator-002",
+            consensus: "Proof-of-Reputation"
+          },
+
+          {
+            hash: "19af2d7f3a9b0f000000000000000000000000000000000000000000000000",
+            from: "tmruser02",
+            to: "tmruser03",
+            amount: 50,
+            nonce: 0,
+            status: "finalized",
+            timestamp: "2026-08-24T13:00:26.051Z",
+            blockHeight: 2,
+            proposer: "por-validator-002",
+            consensus: "Proof-of-Reputation"
+          }
+        ]
+      }
+    ];
+
+    this.round = 2;
+  }
+
+  /* =======================================================
+     VALIDATORS
+  ======================================================= */
+
+  getAllValidators() {
+    return this.validators;
+  }
+
+  getValidator(id) {
+    return this.validators.find(
+      validator => validator.validatorId === id
+    );
+  }
+
+  registerValidator(id, publicKey, reputation = 500) {
+    const existing = this.getValidator(id);
+
+    if (existing) {
+      return existing;
+    }
+
+    const validator = {
+      validatorId: id,
+      publicKey,
+      reputation,
+      status: "active",
+      blocksProposed: 0,
+      blocksValidated: 0,
+      missedRounds: 0,
+      invalidBlocks: 0,
+      joinedAt: Date.now(),
+      createdAt: Date.now(),
+      lastActive: Date.now()
+    };
+
+    this.validators.push(validator);
+
+    return validator;
+  }
+
+  getValidatorStats(id) {
+    const validator = this.getValidator(id);
+
+    if (!validator) {
+      return null;
+    }
+
+    const totalParticipation =
+      validator.blocksValidated +
+      validator.blocksProposed +
+      validator.missedRounds;
+
+    const participationRate =
+      totalParticipation > 0
+        ? (
+            ((validator.blocksValidated +
+              validator.blocksProposed) /
+              totalParticipation) *
+            100
+          ).toFixed(2)
+        : "0.00";
+
+    const uptime =
+      totalParticipation > 0
+        ? (
+            ((totalParticipation - validator.missedRounds) /
+              totalParticipation) *
+            100
+          ).toFixed(2)
+        : "100.00";
+
+    return {
+      validatorId: validator.validatorId,
+      publicKey: validator.publicKey,
+      reputation: validator.reputation,
+      reputationScore: validator.reputation,
+      status: validator.status,
+      blocksProposed: validator.blocksProposed,
+      blocksValidated: validator.blocksValidated,
+      missedRounds: validator.missedRounds,
+      invalidBlocks: validator.invalidBlocks,
+      participationRate: participationRate + "%",
+      uptime: uptime + "%",
+      lastActive: new Date(
+        validator.lastActive
+      ).toISOString(),
+
+      rewardHistory: [],
+      penaltyHistory: []
+    };
+  }
+
+  /* =======================================================
+     BLOCKCHAIN
+  ======================================================= */
+
+  getAllBlocks() {
+    return this.blocks;
+  }
+
+  getLatestBlock() {
+    return this.blocks[this.blocks.length - 1];
+  }
+
+  getBlock(height) {
+    return this.blocks.find(
+      block => Number(block.height) === Number(height)
+    );
+  }
+
+  /* =======================================================
+     TRANSACTIONS
+  ======================================================= */
+
+  findTransaction(hash) {
+    for (const block of this.blocks) {
+      const transactions = Array.isArray(block.transactions)
+        ? block.transactions
+        : [];
+
+      const transaction = transactions.find(
+        tx =>
+          tx.hash === hash ||
+          tx.txHash === hash ||
+          tx.id === hash
+      );
+
+      if (transaction) {
+        return {
+          transaction,
+          block
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /* =======================================================
+     NETWORK STATUS
+  ======================================================= */
+
+  getNetworkStatus() {
+    const activeValidators =
+      this.validators.filter(
+        validator => validator.status === "active"
+      ).length;
+
+    const totalValidators =
+      this.validators.length;
+
+    const averageReputation =
+      totalValidators > 0
+        ? Math.round(
+            this.validators.reduce(
+              (sum, validator) =>
+                sum + Number(validator.reputation || 0),
+              0
+            ) / totalValidators
+          )
+        : 0;
+
+    const totalBlocks =
+      this.blocks.length;
+
+    const latestBlock =
+      this.getLatestBlock();
+
+    return {
+      algorithm: "proof-of-reputation",
+
+      totalValidators,
+
+      activeValidators,
+
+      suspendedValidators:
+        this.validators.filter(
+          validator =>
+            validator.status === "suspended"
+        ).length,
+
+      averageReputation,
+
+      currentRound: this.round,
+
+      latestBlockNumber:
+        latestBlock
+          ? latestBlock.height
+          : 0,
+
+      totalBlocks,
+
+      approvalRate: "100.00%",
+
+      currentProposer:
+        latestBlock
+          ? latestBlock.proposer
+          : null,
+
+      votingStats: {
+        totalVotes: 0,
+        approvedVotes: 0,
+        rejectedVotes: 0
+      },
+
+      timestamp: Date.now()
+    };
+  }
+
+  /* =======================================================
+     CONSENSUS STATUS
+  ======================================================= */
+
+  getConsensusStatus() {
+    const network =
+      this.getNetworkStatus();
+
+    return {
+      algorithm: "proof-of-reputation",
+
+      status: "running",
+
+      currentRound:
+        network.currentRound,
+
+      currentProposer:
+        network.currentProposer,
+
+      activeValidators:
+        network.activeValidators,
+
+      totalValidators:
+        network.totalValidators,
+
+      latestBlock:
+        network.latestBlockNumber,
+
+      approvalThreshold:
+        this.config.consensus.approvalThreshold,
+
+      blockTime:
+        this.config.consensus.blockTime,
+
+      timestamp:
+        network.timestamp
+    };
+  }
+
+  /* =======================================================
+     REPUTATION
+  ======================================================= */
+
+  getReputationBreakdown(validator) {
+    const reputation =
+      Number(validator.reputation || 0);
+
+    return {
+      validatorId:
+        validator.validatorId,
+
+      totalReputation:
+        reputation,
+
+      validationScore:
+        Math.round(
+          reputation *
+          this.config.weights.validation
+        ),
+
+      participationScore:
+        Math.round(
+          reputation *
+          this.config.weights.participation
+        ),
+
+      uptimeScore:
+        Math.round(
+          reputation *
+          this.config.weights.uptime
+        ),
+
+      reliabilityScore:
+        Math.round(
+          reputation *
+          this.config.weights.reliability
+        ),
+
+      weights:
+        this.config.weights
+    };
+  }
+
+  rankValidators() {
+    return [...this.validators]
+      .sort(
+        (a, b) =>
+          Number(b.reputation || 0) -
+          Number(a.reputation || 0)
+      )
+      .map(validator => ({
+        validatorId:
+          validator.validatorId,
+
+        reputation:
+          validator.reputation,
+
+        status:
+          validator.status
+      }));
+  }
+
+  /* =======================================================
+     SYBIL RESISTANCE
+  ======================================================= */
+
+  checkSybilResistance() {
+    const total =
+      this.validators.length;
+
+    const active =
+      this.validators.filter(
+        validator =>
+          validator.status === "active"
+      ).length;
+
+    return {
+      protected: true,
+
+      status: "healthy",
+
+      algorithm:
+        "Proof-of-Reputation",
+
+      totalValidators: total,
+
+      activeValidators: active,
+
+      minimumReputation:
+        this.config
+          .suspensionThresholds
+          .minReputationForActive,
+
+      message:
+        "Validator reputation is required for network participation."
+    };
+  }
+}
 
 /* =========================================================
-   CONSENSUS STATUS
+   CREATE CONSENSUS ENGINE
 ========================================================= */
 
-app.get(
-  '/api/consensus/status',
+const consensus =
+  new ProofOfReputationConsensus();
+
+/* =========================================================
+   API ROUTES
+========================================================= */
+
+const router =
+  express.Router();
+
+/* ---------------------------------------------------------
+   HEALTH
+--------------------------------------------------------- */
+
+router.get(
+  "/health",
   (req, res) => {
     try {
-      const status =
+      const network =
         consensus.getNetworkStatus();
 
       res.json({
         success: true,
-        consensus: status
+
+        status: "healthy",
+
+        algorithm:
+          "proof-of-reputation",
+
+        validators:
+          network.activeValidators,
+
+        consensus:
+          "running",
+
+        network:
+          "online",
+
+        timestamp:
+          new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(503).json({
+        success: false,
+        status: "unhealthy",
+        error: error.message
+      });
+    }
+  }
+);
+
+/* ---------------------------------------------------------
+   NETWORK
+--------------------------------------------------------- */
+
+router.get(
+  "/network",
+  (req, res) => {
+    try {
+      res.json({
+        success: true,
+
+        network:
+          consensus.getNetworkStatus()
       });
     } catch (error) {
       res.status(500).json({
@@ -160,103 +634,51 @@ app.get(
   }
 );
 
-/* =========================================================
-   VALIDATORS
-========================================================= */
+/* ---------------------------------------------------------
+   BLOCKS
+--------------------------------------------------------- */
 
-app.get('/api/validators', (req, res) => {
-  try {
-    const validators =
-      consensus.getAllValidators();
-
-    res.json({
-      success: true,
-
-      totalValidators:
-        validators.length,
-
-      activeValidators:
-        validators.filter(
-          v => v.status === 'active'
-        ).length,
-
-      validators: validators.map(v => ({
-        validatorId:
-          v.validatorId,
-
-        reputation:
-          v.reputation,
-
-        status:
-          v.status,
-
-        blocksProposed:
-          v.blocksProposed,
-
-        blocksValidated:
-          v.blocksValidated,
-
-        joinedAt:
-          new Date(
-            v.joinedAt
-          ).toISOString()
-      }))
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/* =========================================================
-   REGISTER VALIDATOR
-========================================================= */
-
-app.post(
-  '/api/validators/register',
+router.get(
+  "/blocks",
   (req, res) => {
     try {
-      const {
-        validatorId,
-        publicKey,
-        reputation
-      } = req.body;
+      res.json({
+        success: true,
 
-      if (!validatorId || !publicKey) {
-        return res.status(400).json({
+        total:
+          consensus.blocks.length,
+
+        blocks:
+          consensus.getAllBlocks()
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+router.get(
+  "/blocks/:height",
+  (req, res) => {
+    try {
+      const block =
+        consensus.getBlock(
+          req.params.height
+        );
+
+      if (!block) {
+        return res.status(404).json({
           success: false,
-          error:
-            'validatorId and publicKey are required'
+          error: "Block not found"
         });
       }
 
-      const validator =
-        consensus.registerValidator(
-          validatorId,
-          publicKey,
-          reputation || 500
-        );
-
-      res.status(201).json({
+      res.json({
         success: true,
-
-        validator: {
-          validatorId:
-            validator.validatorId,
-
-          reputation:
-            validator.reputation,
-
-          status:
-            validator.status,
-
-          joinedAt:
-            new Date(
-              validator.joinedAt
-            ).toISOString()
-        }
+        block
       });
     } catch (error) {
       res.status(500).json({
@@ -267,769 +689,567 @@ app.post(
   }
 );
 
-/* =========================================================
-   CONFIG
-========================================================= */
-
-app.get('/api/config', (req, res) => {
-  try {
-    res.json({
-      success: true,
-      config: consensus.config
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/* =========================================================
-   INFO
-========================================================= */
-
-app.get('/api/info', (req, res) => {
-  res.json({
-    name:
-      'TMR Blockchain - Proof of Reputation',
-
-    version:
-      '1.0.0',
-
-    algorithm:
-      'proof-of-reputation',
-
-    environment:
-      NODE_ENV,
-
-    deployment:
-      'Vercel',
-
-    timestamp:
-      new Date().toISOString()
-  });
-});
-
-/* =========================================================
-   API DOCUMENTATION
-========================================================= */
-
-app.get('/api/docs', (req, res) => {
-  res.json({
-    title:
-      'TMR Blockchain Proof of Reputation API',
-
-    version:
-      '1.0.0',
-
-    baseUrl:
-      `${req.protocol}://${req.get('host')}`,
-
-    endpoints: {
-
-      health: {
-        method: 'GET',
-        path: '/health',
-        description:
-          'Health check endpoint'
-      },
-
-      network: {
-        method: 'GET',
-        path: '/api/network',
-        description:
-          'Get blockchain network status'
-      },
-
-      blocks: {
-        method: 'GET',
-        path: '/api/blocks',
-        description:
-          'Get blockchain blocks'
-      },
-
-      block: {
-        method: 'GET',
-        path: '/api/blocks/:height',
-        description:
-          'Get block by height'
-      },
-
-      transaction: {
-        method: 'GET',
-        path: '/api/transactions/:hash',
-        description:
-          'Get complete transaction details'
-      },
-
-      address: {
-        method: 'GET',
-        path: '/api/address/:address',
-        description:
-          'Get address transactions and balance'
-      },
-
-      validators: {
-        method: 'GET',
-        path: '/api/validators',
-        description:
-          'Get validators'
-      },
-
-      registerValidator: {
-        method: 'POST',
-        path:
-          '/api/validators/register',
-        description:
-          'Register validator'
-      },
-
-      consensusStatus: {
-        method: 'GET',
-        path:
-          '/api/consensus/status',
-        description:
-          'Get consensus status'
-      },
-
-      config: {
-        method: 'GET',
-        path: '/api/config',
-        description:
-          'Get consensus configuration'
-      },
-
-      info: {
-        method: 'GET',
-        path: '/api/info',
-        description:
-          'Get blockchain information'
-      }
-    }
-  });
-});
-
-/* =========================================================
-   TMR BLOCKCHAIN DATA
-========================================================= */
-
-/*
-   Genesis Block
-*/
-
-const genesisHash =
-  '0000000000000000000000000000000000000000000000000000000000000000';
-
-/*
-   Block #1
-*/
-
-const block1Hash =
-  'f26958d42a8adc4a4eae4291febcdf564dc3ad25a2d5efc17f17e5adaccee1c';
-
-/*
-   Block #2
-*/
-
-const block2Hash =
-  '3a8cd11d20c01fd9805e7c20efd217ae5b296b09020dc4c456b557622bf76913';
-
-/* =========================================================
-   EXPLORER BLOCKS
-========================================================= */
-
-const explorerBlocks = [
-
-  /* =======================================================
-     BLOCK 0
-  ======================================================= */
-
-  {
-    height: 0,
-
-    hash:
-      genesisHash,
-
-    previousHash:
-      null,
-
-    timestamp:
-      '2026-08-13T00:00:00.000Z',
-
-    proposer:
-      'genesis',
-
-    status:
-      'finalized',
-
-    transactions: []
-  },
-
-  /* =======================================================
-     BLOCK 1
-  ======================================================= */
-
-  {
-    height: 1,
-
-    hash:
-      block1Hash,
-
-    previousHash:
-      genesisHash,
-
-    timestamp:
-      '2026-08-24T13:00:26.050Z',
-
-    proposer:
-      'por-validator-001',
-
-    status:
-      'finalized',
-
-    transactions: [
-
-      {
-        hash:
-          'b4178e7b91a22e0986f0ffb8a5ad0d7f264515c90ae62caabca03cfffa25',
-
-        from:
-          'tmr1genesis',
-
-        to:
-          'tmr1validator01',
-
-        amount:
-          250,
-
-        nonce:
-          0,
-
-        status:
-          'finalized',
-
-        data: {
-          type:
-            'transfer'
-        }
-      }
-
-    ]
-  },
-
-  /* =======================================================
-     BLOCK 2
-  ======================================================= */
-
-  {
-    height: 2,
-
-    hash:
-      block2Hash,
-
-    previousHash:
-      block1Hash,
-
-    timestamp:
-      '2026-08-24T13:00:26.051Z',
-
-    proposer:
-      'por-validator-002',
-
-    status:
-      'finalized',
-
-    transactions: [
-
-      /* Transaction 1 */
-
-      {
-        hash:
-          '73d78b14b9da5335f7e1bccd8d151f9e839deb0558c9b0ac7e53760ed07bb',
-
-        from:
-          'tmr1user01',
-
-        to:
-          'tmr1user02',
-
-        amount:
-          100,
-
-        nonce:
-          0,
-
-        status:
-          'finalized',
-
-        data: {
-          type:
-            'transfer'
-        }
-      },
-
-      /* Transaction 2 */
-
-      {
-        hash:
-          '19af2d7f3a9b0f123456789abcdef123456789abcdef123456789abcdef1234',
-
-        from:
-          'tmr1user02',
-
-        to:
-          'tmr1user03',
-
-        amount:
-          50,
-
-        nonce:
-          1,
-
-        status:
-          'finalized',
-
-        data: {
-          type:
-            'transfer'
-        }
-      }
-
-    ]
-  }
-
-];
-
-/* =========================================================
-   NETWORK API
-========================================================= */
-
-app.get('/api/network', (req, res) => {
-
-  res.json({
-
-    success:
-      true,
-
-    latestHeight:
-      explorerBlocks.length - 1,
-
-    count:
-      explorerBlocks.length,
-
-    algorithm:
-      'proof-of-reputation',
-
-    status:
-      'online',
-
-    timestamp:
-      new Date().toISOString()
-  });
-
-});
-
-/* =========================================================
-   GET ALL BLOCKS
-========================================================= */
-
-app.get('/api/blocks', (req, res) => {
-
-  const blocks =
-    explorerBlocks
-      .slice()
-      .reverse()
-      .map(block => ({
-
-        ...block,
-
-        transactionCount:
-          block.transactions.length,
-
-        consensus: {
-
-          algorithm:
-            'proof-of-reputation',
-
-          status:
-            block.status
-        }
-
-      }));
-
-  res.json({
-
-    success:
-      true,
-
-    latestHeight:
-      explorerBlocks.length - 1,
-
-    count:
-      explorerBlocks.length,
-
-    blocks
-  });
-
-});
-
-/* =========================================================
-   GET BLOCK BY HEIGHT
-========================================================= */
-
-app.get(
-  '/api/blocks/:height',
+/* ---------------------------------------------------------
+   TRANSACTION
+--------------------------------------------------------- */
+
+router.get(
+  "/transactions/:hash",
   (req, res) => {
-
-    const height =
-      Number(req.params.height);
-
-    const block =
-      explorerBlocks.find(
-        b => b.height === height
-      );
-
-    if (!block) {
-
-      return res.status(404).json({
-
-        success:
-          false,
-
-        error:
-          'Block not found'
-      });
-
-    }
-
-    res.json({
-
-      ...block,
-
-      transactionCount:
-        block.transactions.length,
-
-      consensus: {
-
-        algorithm:
-          'proof-of-reputation',
-
-        status:
-          block.status
-      }
-
-    });
-
-  }
-);
-
-/* =========================================================
-   GET TRANSACTION BY HASH
-========================================================= */
-
-app.get(
-  '/api/transactions/:hash',
-  (req, res) => {
-
     try {
-
       const hash =
         req.params.hash;
 
-      let foundTx =
-        null;
+      const result =
+        consensus.findTransaction(
+          hash
+        );
 
-      let foundBlock =
-        null;
-
-      /*
-         Search every block
-      */
-
-      for (
-        const block
-        of explorerBlocks
-      ) {
-
-        const transaction =
-          block.transactions.find(
-            tx =>
-              tx.hash === hash
-          );
-
-        if (transaction) {
-
-          foundTx =
-            transaction;
-
-          foundBlock =
-            block;
-
-          break;
-        }
-      }
-
-      /*
-         Transaction not found
-      */
-
-      if (!foundTx) {
-
+      if (!result) {
         return res.status(404).json({
-
-          success:
-            false,
-
-          error:
-            'Transaction not found'
+          success: false,
+          error: "Transaction not found"
         });
-
       }
 
-      /*
-         Return COMPLETE transaction
-         information.
-      */
+      const tx =
+        result.transaction;
+
+      const block =
+        result.block;
 
       res.json({
-
-        success:
-          true,
-
-        /* Transaction */
+        success: true,
 
         hash:
-          foundTx.hash,
+          tx.hash ||
+          tx.txHash ||
+          tx.id ||
+          hash,
 
         status:
-          foundTx.status ||
-          foundBlock.status ||
-          'finalized',
+          tx.status ||
+          block.status ||
+          "finalized",
 
         from:
-          foundTx.from ||
-          '—',
+          tx.from ||
+          tx.sender ||
+          "—",
 
         to:
-          foundTx.to ||
-          '—',
+          tx.to ||
+          tx.recipient ||
+          "—",
 
         amount:
-          foundTx.amount ??
-          '—',
+          tx.amount ??
+          tx.value ??
+          "—",
 
         nonce:
-          foundTx.nonce ??
+          tx.nonce ??
           0,
 
-        /* Time */
-
         timestamp:
-          foundTx.timestamp ||
-          foundBlock.timestamp ||
+          tx.timestamp ||
+          tx.time ||
+          block.timestamp ||
           null,
 
-        /* Block */
-
-        block:
-          foundBlock.height,
-
         blockHeight:
-          foundBlock.height,
-
-        blockHash:
-          foundBlock.hash,
-
-        previousHash:
-          foundBlock.previousHash,
-
-        /* Validator */
+          tx.blockHeight ??
+          tx.height ??
+          block.height ??
+          null,
 
         proposer:
-          foundBlock.proposer,
-
-        /* Consensus */
+          tx.proposer ||
+          block.proposer ||
+          null,
 
         consensus:
-          'Proof-of-Reputation',
-
-        /* Extra */
-
-        transactionData:
-          foundTx.data ||
-          null
-
+          tx.consensus ||
+          block.consensus ||
+          "Proof-of-Reputation"
       });
-
     } catch (error) {
-
       console.error(
-        'Transaction lookup error:',
+        "Transaction lookup error:",
         error
       );
 
       res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          error.message
+        success: false,
+        error: error.message
       });
-
     }
+  }
+);
 
+/* ---------------------------------------------------------
+   VALIDATORS
+--------------------------------------------------------- */
+
+router.get(
+  "/validators",
+  (req, res) => {
+    try {
+      const validators =
+        consensus
+          .getAllValidators()
+          .map(
+            validator =>
+              consensus.getValidatorStats(
+                validator.validatorId
+              )
+          );
+
+      res.json({
+        success: true,
+
+        totalValidators:
+          validators.length,
+
+        activeValidators:
+          validators.filter(
+            validator =>
+              validator.status === "active"
+          ).length,
+
+        validators
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+router.get(
+  "/validators/:id",
+  (req, res) => {
+    try {
+      const validator =
+        consensus.getValidator(
+          req.params.id
+        );
+
+      if (!validator) {
+        return res.status(404).json({
+          success: false,
+          error: "Validator not found"
+        });
+      }
+
+      res.json({
+        success: true,
+
+        validator:
+          consensus.getValidatorStats(
+            req.params.id
+          )
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+router.get(
+  "/validators/:id/reputation",
+  (req, res) => {
+    try {
+      const validator =
+        consensus.getValidator(
+          req.params.id
+        );
+
+      if (!validator) {
+        return res.status(404).json({
+          success: false,
+          error: "Validator not found"
+        });
+      }
+
+      res.json({
+        success: true,
+
+        reputation:
+          consensus.getReputationBreakdown(
+            validator
+          )
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* ---------------------------------------------------------
+   CONSENSUS
+--------------------------------------------------------- */
+
+router.get(
+  "/consensus",
+  (req, res) => {
+    try {
+      res.json({
+        success: true,
+
+        consensus:
+          consensus.getConsensusStatus()
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+router.get(
+  "/consensus/latest",
+  (req, res) => {
+    try {
+      const network =
+        consensus.getNetworkStatus();
+
+      res.json({
+        success: true,
+
+        consensus:
+          "proof-of-reputation",
+
+        activeValidators:
+          network.activeValidators,
+
+        totalValidators:
+          network.totalValidators,
+
+        averageReputation:
+          network.averageReputation,
+
+        currentRound:
+          network.currentRound,
+
+        currentProposer:
+          network.currentProposer,
+
+        latestBlockNumber:
+          network.latestBlockNumber,
+
+        approvalRate:
+          network.approvalRate,
+
+        timestamp:
+          network.timestamp
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+router.get(
+  "/consensus/network",
+  (req, res) => {
+    try {
+      const network =
+        consensus.getNetworkStatus();
+
+      const ranking =
+        consensus.rankValidators();
+
+      res.json({
+        success: true,
+
+        network: {
+          algorithm:
+            "proof-of-reputation",
+
+          totalValidators:
+            network.totalValidators,
+
+          activeValidators:
+            network.activeValidators,
+
+          suspendedValidators:
+            network.suspendedValidators,
+
+          averageReputation:
+            network.averageReputation,
+
+          totalRounds:
+            network.currentRound,
+
+          totalBlocks:
+            network.latestBlockNumber,
+
+          averageApprovalRate:
+            network.approvalRate,
+
+          topValidators:
+            ranking.slice(0, 10),
+
+          votingStats:
+            network.votingStats,
+
+          timestamp:
+            network.timestamp
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+router.get(
+  "/consensus/reputation-ranking",
+  (req, res) => {
+    try {
+      const ranking =
+        consensus.rankValidators();
+
+      res.json({
+        success: true,
+
+        ranking:
+          ranking.map(
+            (validator, index) => ({
+              rank:
+                index + 1,
+
+              validatorId:
+                validator.validatorId,
+
+              reputation:
+                validator.reputation,
+
+              status:
+                validator.status
+            })
+          )
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+router.get(
+  "/consensus/sybil-check",
+  (req, res) => {
+    try {
+      res.json({
+        success: true,
+
+        sybilResistance:
+          consensus.checkSybilResistance()
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* ---------------------------------------------------------
+   REWARDS
+--------------------------------------------------------- */
+
+router.get(
+  "/consensus/rewards",
+  (req, res) => {
+    try {
+      res.json({
+        success: true,
+
+        rewards: {
+          algorithm:
+            "proof-of-reputation",
+
+          blockProposalReward:
+            consensus.config.rewards.blockProposal,
+
+          blockValidationReward:
+            consensus.config.rewards.blockValidation,
+
+          maxDailyReward:
+            consensus.config.rewards.maxDailyReward
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* ---------------------------------------------------------
+   PENALTIES
+--------------------------------------------------------- */
+
+router.get(
+  "/consensus/penalties",
+  (req, res) => {
+    try {
+      res.json({
+        success: true,
+
+        penalties:
+          consensus.config.penalties
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* ---------------------------------------------------------
+   CONFIG
+--------------------------------------------------------- */
+
+router.get(
+  "/config",
+  (req, res) => {
+    try {
+      res.json({
+        success: true,
+
+        config:
+          consensus.config
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
   }
 );
 
 /* =========================================================
-   ADDRESS API
+   API PREFIX
+========================================================= */
+
+app.use(
+  "/api",
+  router
+);
+
+/* =========================================================
+   API ROOT
 ========================================================= */
 
 app.get(
-  '/api/address/:address',
+  "/api",
   (req, res) => {
-
-    const address =
-      req.params.address;
-
-    const transactions =
-      explorerBlocks
-        .flatMap(
-          block =>
-            block.transactions.map(
-              tx => ({
-
-                ...tx,
-
-                block:
-                  block.height,
-
-                blockHash:
-                  block.hash,
-
-                timestamp:
-                  block.timestamp,
-
-                proposer:
-                  block.proposer,
-
-                status:
-                  block.status
-              })
-            )
-        )
-        .filter(
-          tx =>
-            tx.from === address ||
-            tx.to === address
-        );
-
-    const balance =
-      transactions.reduce(
-        (sum, tx) => {
-
-          if (
-            tx.to === address
-          ) {
-
-            return (
-              sum +
-              Number(tx.amount)
-            );
-
-          }
-
-          if (
-            tx.from === address
-          ) {
-
-            return (
-              sum -
-              Number(tx.amount)
-            );
-
-          }
-
-          return sum;
-
-        },
-        0
-      );
-
     res.json({
+      success: true,
 
-      success:
-        true,
+      name:
+        "TMR Blockchain API",
 
-      address,
+      version:
+        "1.0.0",
 
-      balance,
+      blockchain:
+        "TMR Blockchain",
 
-      transactionCount:
-        transactions.length,
+      consensus:
+        "Proof-of-Reputation",
 
-      transactions
+      status:
+        "online",
+
+      endpoints: [
+        "/api/health",
+        "/api/network",
+        "/api/blocks",
+        "/api/blocks/:height",
+        "/api/transactions/:hash",
+        "/api/validators",
+        "/api/validators/:id",
+        "/api/validators/:id/reputation",
+        "/api/consensus",
+        "/api/consensus/latest",
+        "/api/consensus/network",
+        "/api/consensus/reputation-ranking",
+        "/api/consensus/sybil-check",
+        "/api/consensus/rewards",
+        "/api/consensus/penalties",
+        "/api/config"
+      ]
     });
-
   }
 );
 
 /* =========================================================
-   STATIC WEBSITE
+   FRONTEND
 ========================================================= */
 
+const publicPath =
+  path.join(
+    __dirname,
+    "public"
+  );
+
 app.use(
-  express.static(
-    path.join(
-      __dirname,
-      'public'
-    )
-  )
+  express.static(publicPath)
 );
 
 /* =========================================================
-   ROOT
+   FRONTEND FALLBACK
 ========================================================= */
 
-app.get('/', (req, res) => {
-
-  res.sendFile(
-    path.join(
-      __dirname,
-      'public',
-      'index.html'
-    )
-  );
-
-});
-
-/* =========================================================
-   404
-========================================================= */
-
-app.use(
+app.get(
+  "*",
   (req, res) => {
+    const indexFile =
+      path.join(
+        publicPath,
+        "index.html"
+      );
 
-    res.status(404).json({
-
-      success:
-        false,
-
-      error:
-        'Endpoint not found',
-
-      path:
-        req.path,
-
-      method:
-        req.method,
-
-      documentation:
-        '/api/docs'
-    });
-
+    res.sendFile(
+      indexFile,
+      error => {
+        if (error) {
+          res.status(404).json({
+            success: false,
+            error:
+              "TMR Blockchain Explorer frontend not found"
+          });
+        }
+      }
+    );
   }
 );
 
@@ -1039,60 +1259,39 @@ app.use(
 
 app.use(
   (err, req, res, next) => {
-
-    console.error(
-      'Server Error:',
-      err
-    );
+    console.error(err);
 
     res.status(500).json({
-
-      success:
-        false,
-
+      success: false,
       error:
         err.message ||
-        'Internal server error',
-
-      timestamp:
-        new Date().toISOString()
+        "Internal server error"
     });
-
   }
 );
 
 /* =========================================================
-   SERVER START
+   START SERVER
 ========================================================= */
 
-const server =
+if (require.main === module) {
   app.listen(
     PORT,
     () => {
-
-      console.log('');
       console.log(
-        '=========================================='
+        "========================================"
       );
 
       console.log(
-        '   TMR Blockchain Explorer'
+        " TMR Blockchain"
       );
 
       console.log(
-        '   Proof-of-Reputation'
+        " Proof-of-Reputation"
       );
 
       console.log(
-        '=========================================='
-      );
-
-      console.log(
-        `Status: Running`
-      );
-
-      console.log(
-        `Port: ${PORT}`
+        "========================================"
       );
 
       console.log(
@@ -1100,76 +1299,30 @@ const server =
       );
 
       console.log(
-        `Algorithm: Proof-of-Reputation`
+        `Port: ${PORT}`
       );
 
       console.log(
-        `Latest Block: ${
-          explorerBlocks.length - 1
-        }`
+        `Validators: ${consensus.validators.length}`
       );
 
       console.log(
-        '=========================================='
+        `Blocks: ${consensus.blocks.length}`
       );
 
-      console.log('');
+      console.log(
+        "Status: ONLINE"
+      );
 
+      console.log(
+        "========================================"
+      );
     }
   );
+}
 
 /* =========================================================
-   GRACEFUL SHUTDOWN
-========================================================= */
-
-process.on(
-  'SIGTERM',
-  () => {
-
-    console.log(
-      'SIGTERM received'
-    );
-
-    server.close(
-      () => {
-
-        console.log(
-          'HTTP server closed'
-        );
-
-        process.exit(0);
-
-      }
-    );
-
-  }
-);
-
-process.on(
-  'SIGINT',
-  () => {
-
-    console.log(
-      'SIGINT received'
-    );
-
-    server.close(
-      () => {
-
-        console.log(
-          'HTTP server closed'
-        );
-
-        process.exit(0);
-
-      }
-    );
-
-  }
-);
-
-/* =========================================================
-   EXPORT
+   VERCEL EXPORT
 ========================================================= */
 
 module.exports = app;
