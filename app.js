@@ -2,7 +2,7 @@
 // Frontend application
 // Fixed API response handling + mobile friendly UI
 
-const API_BASE = "";
+const API_BASE = "https://tmr-blockchain.vercel.app";
 
 const $ = (id) => document.getElementById(id);
 
