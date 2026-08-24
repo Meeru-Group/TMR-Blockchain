@@ -8,7 +8,6 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const TMRBlockchain = require('./blockchain');
 require('dotenv').config();
 
 // Import consensus system (mock for deployment)
@@ -71,11 +70,6 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Initialize consensus
 const consensus = new MockProofOfReputationConsensus();
-
-// Explorer data layer. This is intentionally in-memory for the current Vercel
-// deployment; connect this class to a persistent TMR node/RPC for production.
-const blockchain = new TMRBlockchain();
-blockchain.seedDemoData();
 
 // Middleware
 app.use(cors());
@@ -208,107 +202,6 @@ app.get('/api/config', (req, res) => {
 });
 
 // ============================================
-// Blockchain Explorer Endpoints
-// ============================================
-
-/**
- * GET /api/network
- * Public network information for the explorer.
- */
-app.get('/api/network', (req, res) => {
-  res.json({ success: true, network: blockchain.getNetworkStats() });
-});
-
-/**
- * GET /api/blocks
- * Return the newest blocks first. Use ?limit=20 to change the page size.
- */
-app.get('/api/blocks', (req, res) => {
-  const blocks = blockchain.getBlocks(req.query.limit);
-  res.json({
-    success: true,
-    latestHeight: blockchain.getLatestBlock().height,
-    count: blocks.length,
-    blocks
-  });
-});
-
-/**
- * GET /api/blocks/:height
- * Return one block by height.
- */
-app.get('/api/blocks/:height', (req, res) => {
-  const block = blockchain.getBlock(req.params.height);
-  if (!block) {
-    return res.status(404).json({
-      success: false,
-      error: 'Block not found'
-    });
-  }
-  res.json({ success: true, block });
-});
-
-/**
- * GET /api/transactions/:hash
- * Return a transaction by hash.
- */
-app.get('/api/transactions/:hash', (req, res) => {
-  const transaction = blockchain.getTransaction(req.params.hash);
-  if (!transaction) {
-    return res.status(404).json({
-      success: false,
-      error: 'Transaction not found'
-    });
-  }
-  res.json({ success: true, transaction });
-});
-
-/**
- * GET /api/address/:address
- * Return address balance and recent transactions.
- */
-app.get('/api/address/:address', (req, res) => {
-  res.json({
-    success: true,
-    account: blockchain.getAddress(req.params.address)
-  });
-});
-
-/**
- * POST /api/transactions
- * Add a transaction to the pending pool.
- * This endpoint is for development/testing until a signed transaction
- * system is connected to the real TMR node.
- */
-app.post('/api/transactions', (req, res) => {
-  try {
-    const transaction = blockchain.addTransaction(req.body || {});
-    res.status(201).json({
-      success: true,
-      status: 'pending',
-      transaction
-    });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /api/blocks/mine
- * Finalize pending transactions into a block.
- * Development endpoint; production should be controlled by validators.
- */
-app.post('/api/blocks/mine', (req, res) => {
-  try {
-    const proposer = req.body?.proposer || 'por-validator-1';
-    const block = blockchain.minePendingBlock(proposer);
-    res.status(201).json({ success: true, block });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================
 // Information Endpoints
 // ============================================
 
@@ -322,7 +215,7 @@ app.get('/api/info', (req, res) => {
     version: '1.0.0',
     algorithm: 'proof-of-reputation',
     environment: NODE_ENV,
-    deployment: 'Vercel',
+    deployment: 'render.com',
     timestamp: new Date().toISOString()
   });
 });
@@ -335,7 +228,7 @@ app.get('/api/docs', (req, res) => {
   const docs = {
     title: 'TMR Blockchain Proof of Reputation API',
     version: '1.0.0',
-    baseUrl: `${req.protocol}://${req.get('host')}`,
+    baseUrl: `http://localhost:${PORT}`,
     endpoints: {
       health: {
         method: 'GET',
@@ -371,41 +264,6 @@ app.get('/api/docs', (req, res) => {
         method: 'GET',
         path: '/api/info',
         description: 'Get system information'
-      },
-      network: {
-        method: 'GET',
-        path: '/api/network',
-        description: 'Get explorer network statistics'
-      },
-      blocks: {
-        method: 'GET',
-        path: '/api/blocks',
-        description: 'Get latest blocks'
-      },
-      block: {
-        method: 'GET',
-        path: '/api/blocks/:height',
-        description: 'Get a block by height'
-      },
-      transaction: {
-        method: 'GET',
-        path: '/api/transactions/:hash',
-        description: 'Get a transaction by hash'
-      },
-      address: {
-        method: 'GET',
-        path: '/api/address/:address',
-        description: 'Get address balance and recent transactions'
-      },
-      submitTransaction: {
-        method: 'POST',
-        path: '/api/transactions',
-        description: 'Add a development/test transaction'
-      },
-      mineBlock: {
-        method: 'POST',
-        path: '/api/blocks/mine',
-        description: 'Finalize pending transactions for development/testing'
       }
     }
   };
@@ -423,7 +281,7 @@ app.get('/', (req, res) => {
     status: 'running',
     algorithm: 'proof-of-reputation',
     version: '1.0.0',
-    documentation: `${req.protocol}://${req.get('host')}/api/docs`,
+    documentation: `http://localhost:${PORT}/api/docs`,
     timestamp: new Date().toISOString()
   });
 });

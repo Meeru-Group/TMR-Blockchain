@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TMR Blockchain Explorer</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="brand">🔗 TMR Blockchain</div>
+      <div class="sub">Proof-of-Reputation Explorer</div>
+    </div>
+    <span id="status" class="pill">Checking network…</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Explore TMR Blockchain</h1>
+      <p>Search blocks, transactions and addresses.</p>
+      <div class="search">
+        <input id="search" placeholder="Block height, transaction hash or address">
+        <button onclick="doSearch()">Search</button>
+      </div>
+      <div id="message" class="message"></div>
+    </section>
+
+    <section class="stats">
+      <div class="card"><span>Latest Block</span><strong id="height">—</strong></div>
+      <div class="card"><span>Blocks Loaded</span><strong id="count">—</strong></div>
+      <div class="card"><span>Consensus</span><strong id="consensus">—</strong></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Latest Blocks</h2>
+        <button class="refresh" onclick="loadBlocks()">↻ Refresh</button>
+      </div>
+      <div id="blocks" class="blocks">Loading…</div>
+    </section>
+
+    <section id="details" class="panel hidden"></section>
+  </main>
+
+  <footer>TMR Blockchain Explorer • API powered</footer>
+  <script src="./app.js"></script>
+</body>
+</html>

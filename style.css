@@ -1,0 +1,14 @@
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:#0b1020;color:#eef2ff}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px max(20px,5vw);border-bottom:1px solid #202945;background:#0f172a;position:sticky;top:0;z-index:2}
+.brand{font-size:22px;font-weight:800}.sub{font-size:12px;color:#94a3b8;margin-top:3px}
+.pill{padding:7px 12px;border-radius:999px;background:#172554;color:#93c5fd;font-size:12px}
+main{max-width:1050px;margin:auto;padding:30px 20px}
+.hero{padding:28px 0}.hero h1{font-size:clamp(30px,6vw,52px);margin:0 0 8px}.hero p{color:#94a3b8}
+.search{display:flex;gap:10px;margin-top:22px}.search input{flex:1;padding:15px;border-radius:12px;border:1px solid #334155;background:#0f172a;color:white;outline:none}.search button,.refresh{border:0;border-radius:12px;padding:0 18px;background:#2563eb;color:white;font-weight:700;cursor:pointer}
+.message{color:#fbbf24;margin-top:10px;min-height:20px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:10px 0 24px}.card,.panel{background:#111827;border:1px solid #25304a;border-radius:16px}.card{padding:20px}.card span{display:block;color:#94a3b8;font-size:13px}.card strong{display:block;font-size:25px;margin-top:8px}
+.panel{padding:20px;margin-bottom:20px}.panel-head{display:flex;justify-content:space-between;align-items:center}.panel h2{margin:0 0 16px}.refresh{height:38px;background:#1e293b}
+.blocks{display:grid;gap:10px}.block{padding:16px;border:1px solid #273449;border-radius:12px;background:#0f172a;cursor:pointer}.block:hover{border-color:#3b82f6}.row{display:flex;justify-content:space-between;gap:15px}.muted{color:#94a3b8;font-size:12px}.hash{font-family:monospace;word-break:break-all;color:#bfdbfe;margin-top:7px}.ok{color:#86efac}.hidden{display:none}
+footer{text-align:center;color:#64748b;padding:30px}
+@media(max-width:700px){.stats{grid-template-columns:1fr}.search{flex-direction:column}.search button{height:48px}.top{align-items:flex-start;gap:12px}.row{flex-direction:column}}
