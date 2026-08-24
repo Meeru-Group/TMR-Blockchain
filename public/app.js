@@ -8,13 +8,10 @@
    AUTO API BASE
    ========================================================= */
 
-const API_ORIGIN = "https://tmr-blockchain.vercel.app";
+// AUTO API BASE
+const API_BASE = window.location.origin;
 
-const API_BASE =
-  window.location.hostname === "tmr-blockchain.vercel.app"
-    ? ""
-    : API_ORIGIN;
-
+console.log("TMR API BASE:", API_BASE);
 console.log("TMR API BASE:", API_BASE || window.location.origin);
 
 
