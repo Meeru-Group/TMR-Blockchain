@@ -162,6 +162,22 @@ async function handler(req, res) {
 
     const { pathname, searchParams } = parseURL(req);
 
+    // ----------------------------------------------------------
+    // AUTOMATIC BLOCK PRODUCTION
+    // ----------------------------------------------------------
+    // Vercel runs serverless requests instead of a permanent
+    // Node.js process. Trigger the existing block-production
+    // routine whenever an API request arrives. PostgreSQL
+    // advisory locking inside produceNextBlockIfDue() prevents
+    // concurrent requests from creating duplicate blocks.
+    if (pathname.startsWith("/api/")) {
+      try {
+        await chain.produceNextBlockIfDue();
+      } catch (productionError) {
+        console.error("TMR block production warning:", productionError);
+      }
+    }
+
     // ---------------- WEBSITE ----------------
     if (pathname === "/" || pathname === "/index.html") {
       const publicIndex = path.join(
