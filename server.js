@@ -178,6 +178,120 @@ async function handler(req, res) {
       }
     }
 
+    // ---------------- TMR JSON-RPC ----------------
+    // JSON-RPC 2.0 gateway to the persistent TMR chain state.
+    // This endpoint does not simulate blocks; reads come from PostgreSQL
+    // and writes create pending transactions in the real chain data layer.
+    if (pathname === "/rpc") {
+      if (req.method !== "POST") {
+        return sendJSON(res, 405, {
+          jsonrpc: "2.0",
+          error: { code: -32600, message: "JSON-RPC POST required" },
+          id: null
+        });
+      }
+
+      let body = "";
+      for await (const chunk of req) body += chunk;
+
+      let rpc;
+      try {
+        rpc = JSON.parse(body || "{}");
+      } catch {
+        return sendJSON(res, 400, {
+          jsonrpc: "2.0",
+          error: { code: -32700, message: "Parse error" },
+          id: null
+        });
+      }
+
+      const id = Object.prototype.hasOwnProperty.call(rpc, "id") ? rpc.id : null;
+      const method = rpc.method;
+      const params = Array.isArray(rpc.params) ? rpc.params : [];
+
+      try {
+        let result;
+
+        switch (method) {
+          case "tmr_chainId":
+            result = NETWORK.chainId;
+            break;
+
+          case "tmr_blockNumber": {
+            const latest = await chain.getLatestBlock();
+            result = latest ? Number(latest.height) : 0;
+            break;
+          }
+
+          case "tmr_getBlockByNumber": {
+            const height = params[0];
+            if (height === undefined || height === null) {
+              throw Object.assign(new Error("Block height is required"), { code: -32602 });
+            }
+            const normalized = typeof height === "string" && height.startsWith("0x")
+              ? parseInt(height, 16)
+              : Number(height);
+            result = await chain.getBlock(normalized);
+            break;
+          }
+
+          case "tmr_getBlockByHash":
+            result = await chain.getBlock(String(params[0] || ""));
+            break;
+
+          case "tmr_getTransactionByHash":
+            result = await chain.getTransaction(String(params[0] || ""));
+            break;
+
+          case "tmr_getBalance": {
+            const address = String(params[0] || "");
+            if (!address) {
+              throw Object.assign(new Error("Address is required"), { code: -32602 });
+            }
+            const data = await chain.getAddress(address);
+            result = data;
+            break;
+          }
+
+          case "tmr_sendTransaction": {
+            const tx = params[0];
+            if (!tx || typeof tx !== "object") {
+              throw Object.assign(new Error("Transaction object is required"), { code: -32602 });
+            }
+            const created = await chain.addTransaction({
+              from: tx.from,
+              to: tx.to,
+              amount: tx.amount,
+              nonce: tx.nonce ?? 0,
+              data: tx.data ?? null
+            });
+            result = created.hash;
+            break;
+          }
+
+          case "tmr_getNetwork":
+            result = await getNetwork();
+            break;
+
+          default:
+            return sendJSON(res, 200, {
+              jsonrpc: "2.0",
+              error: { code: -32601, message: "Method not found" },
+              id
+            });
+        }
+
+        return sendJSON(res, 200, { jsonrpc: "2.0", result, id });
+      } catch (error) {
+        const code = error.code || -32000;
+        return sendJSON(res, 200, {
+          jsonrpc: "2.0",
+          error: { code, message: error.message || "TMR RPC error" },
+          id
+        });
+      }
+    }
+
     // ---------------- WEBSITE ----------------
     if (pathname === "/" || pathname === "/index.html") {
       const publicIndex = path.join(
