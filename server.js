@@ -178,6 +178,112 @@ async function handler(req, res) {
       }
     }
 
+    // ---------------- BROWSER RPC DIAGNOSTICS ----------------
+    // Read-only GET helpers for browser testing.
+    // Standard JSON-RPC remains POST-only at /rpc.
+    // These GET helpers never create transactions or blocks.
+    if (pathname === "/rpc" && req.method === "GET") {
+      const method = searchParams.get("method");
+
+      try {
+        let result;
+
+        switch (method) {
+          case "tmr_chainId":
+            result = NETWORK.chainId;
+            break;
+
+          case "tmr_blockNumber": {
+            const latest = await chain.getLatestBlock();
+            result = latest ? Number(latest.height) : 0;
+            break;
+          }
+
+          case "tmr_getNetwork":
+            result = await getNetwork();
+            break;
+
+          case "tmr_getBlockByNumber": {
+            const height = searchParams.get("height");
+            if (height === null || height === "") {
+              return sendJSON(res, 400, {
+                jsonrpc: "2.0",
+                error: { code: -32602, message: "height query parameter is required" },
+                id: null
+              });
+            }
+
+            const normalized = height.startsWith("0x")
+              ? parseInt(height, 16)
+              : Number(height);
+
+            if (!Number.isInteger(normalized) || normalized < 0) {
+              return sendJSON(res, 400, {
+                jsonrpc: "2.0",
+                error: { code: -32602, message: "Invalid block height" },
+                id: null
+              });
+            }
+
+            result = await chain.getBlock(normalized);
+            break;
+          }
+
+          case "tmr_getBlockByHash": {
+            const hash = searchParams.get("hash") || "";
+            result = await chain.getBlock(hash);
+            break;
+          }
+
+          case "tmr_getTransactionByHash": {
+            const hash = searchParams.get("hash") || "";
+            result = await chain.getTransaction(hash);
+            break;
+          }
+
+          case "tmr_getBalance": {
+            const address = searchParams.get("address") || "";
+            if (!address) {
+              return sendJSON(res, 400, {
+                jsonrpc: "2.0",
+                error: { code: -32602, message: "address query parameter is required" },
+                id: null
+              });
+            }
+            result = await chain.getAddress(address);
+            break;
+          }
+
+          default:
+            return sendJSON(res, 200, {
+              jsonrpc: "2.0",
+              error: {
+                code: -32601,
+                message: "Unknown or missing method. Try ?method=tmr_chainId"
+              },
+              id: null
+            });
+        }
+
+        return sendJSON(res, 200, {
+          jsonrpc: "2.0",
+          result,
+          id: null,
+          mode: "browser-readonly"
+        });
+      } catch (error) {
+        console.error("Browser RPC error:", error);
+        return sendJSON(res, 500, {
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: error.message || "TMR RPC error"
+          },
+          id: null
+        });
+      }
+    }
+
     // ---------------- TMR JSON-RPC ----------------
     // JSON-RPC 2.0 gateway to the persistent TMR chain state.
     // This endpoint does not simulate blocks; reads come from PostgreSQL
