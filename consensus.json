@@ -1,0 +1,62 @@
+{
+  "algorithm": "proof-of-reputation",
+  "description": "Validators participate in consensus according to dynamically calculated reputation scores",
+  "maxReputation": 1000,
+  "minReputation": 0,
+  "weights": {
+    "validation": 0.35,
+    "participation": 0.25,
+    "uptime": 0.20,
+    "reliability": 0.20
+  },
+  "rewards": {
+    "validBlockProposal": 2,
+    "correctValidation": 1,
+    "successfulConsensusParticipation": 1,
+    "reliableUptimeIncrement": 0.1,
+    "maxDailyReward": 50
+  },
+  "penalties": {
+    "invalidBlockProposal": -20,
+    "invalidTransactionApproval": -10,
+    "doubleSigning": -100,
+    "conflictingVotes": -15,
+    "missedRound": -5,
+    "repeatedDowntime": -30,
+    "maliciousBehavior": -50
+  },
+  "suspensionThresholds": {
+    "minReputationForActive": 100,
+    "reputationForSuspension": -200,
+    "maxCumulativePenalty": 300
+  },
+  "validatorRequirements": {
+    "minimumAge": 100,
+    "minimumInitialReputation": 500,
+    "minimumParticipationRate": 0.75,
+    "requiredBond": 1000
+  },
+  "sybilResistance": {
+    "enabled": true,
+    "identityVerification": true,
+    "publicKeyTracking": true,
+    "cooldownPeriod": 50,
+    "penaltyForIdentityReuse": -200
+  },
+  "consensus": {
+    "approvalThreshold": 0.66,
+    "minActiveValidators": 3,
+    "maxProposersPerRound": 1,
+    "validatorsPerBlock": 5,
+    "roundTimeout": 30000,
+    "blockTime": 12000
+  },
+  "antiGaming": {
+    "reputationCap": 1000,
+    "diminishingReturnsThreshold": 800,
+    "diminishingReturnsFactor": 0.5,
+    "cooldownBlocks": 100,
+    "suspiciousActivityThreshold": 5,
+    "randomSelectionPercentage": 0.15
+  }
+}
