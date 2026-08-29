@@ -1,19 +1,18 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "server.js",
-      "use": "@vercel/node"
+  "functions": {
+    "api/rpc.js": {
+      "maxDuration": 30
     }
-  ],
+  },
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "server.js"
+      "src": "/rpc",
+      "dest": "/api/rpc.js"
     },
     {
-      "src": "/(.*)",
-      "dest": "server.js"
+      "src": "/rpc/",
+      "dest": "/api/rpc.js"
     }
   ]
 }

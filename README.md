@@ -1,98 +1,61 @@
-# TMR Blockchain Explorer
+# TMR Blockchain RPC — Vercel
 
-This folder contains a simple mobile-friendly explorer frontend.
-
-## Run locally
-Open `index.html` with a static server.
-
-## API
-The frontend defaults to:
-https://tmr-blockchain.vercel.app
-
-It uses:
-- `/api/network`
-- `/api/blocks`
-- `/api/blocks/:height`
-
-The frontend is intentionally separate from the blockchain backend.
-
-
-# TMR Blockchain — Persistent Database Edition
-
-This version replaces the previous in-memory explorer data with PostgreSQL persistence.
-
-## What is persistent?
-
-- Blocks
-- Transactions
-- Validators
-- Validator reputation fields
-- Reputation events
-- Chain metadata
+This package is a **real JSON-RPC gateway**, not a fake blockchain database.
 
 ## Important
 
-The repository does NOT contain a database password or database server.
+Vercel is the RPC HTTP gateway. The actual blockchain/node must be running somewhere reachable by HTTPS.
 
-You must create a PostgreSQL database and add `DATABASE_URL` to Vercel Environment Variables.
-
-The application automatically creates its tables and a genesis block on first successful connection.
-
-It does NOT seed demo transactions or demo blocks.
-
-## Vercel
-
-1. Create a PostgreSQL database (Neon/Supabase/Vercel Postgres or another PostgreSQL provider).
-2. Copy its connection string.
-3. In Vercel:
-   Project → Settings → Environment Variables
-4. Add:
-   `DATABASE_URL`
-5. Redeploy.
-6. Open:
-   `/api/health`
-
-Expected storage response:
-
-```json
-{
-  "storage": "PostgreSQL",
-  "persistent": true
-}
-```
-
-## Local
-
-Create `.env`:
+Set this Vercel Environment Variable:
 
 ```env
-DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
-NODE_ENV=development
+TMR_UPSTREAM_RPC_URL=https://YOUR-REAL-TMR-NODE/rpc
 ```
 
-Then:
+Optional:
+
+```env
+RPC_API_KEY=your-long-random-key
+TMR_CHAIN_ID=TMR-CHAIN-1
+TMR_NETWORK=testnet
+```
+
+## Deploy
+
+1. Upload this project to a GitHub repository.
+2. Import the repository into Vercel.
+3. Add the environment variables in **Project → Settings → Environment Variables**.
+4. Redeploy.
+5. Test:
+
+```text
+https://YOUR-DOMAIN.vercel.app/rpc
+```
+
+The browser GET response is read-only. JSON-RPC requests should normally be sent with POST.
+
+## Test with curl
+
+Chain ID:
 
 ```bash
-npm install
-npm start
+curl -X POST https://YOUR-DOMAIN.vercel.app/rpc   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","id":1,"method":"tmr_chainId","params":[]}'
 ```
 
-The database tables are created automatically.
+Status:
 
-## API
+```bash
+curl -X POST https://YOUR-DOMAIN.vercel.app/rpc   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","id":2,"method":"tmr_status","params":[]}'
+```
 
-- GET `/api`
-- GET `/api/health`
-- GET `/api/network`
-- GET `/api/blocks`
-- GET `/api/blocks/:height`
-- GET `/api/transactions`
-- GET `/api/transactions/:hash`
-- GET `/api/validators`
-- GET `/api/validators/:id`
-- GET `/api/address/:address`
-- GET `/api/search?q=...`
+## Why the old endpoint failed
+
+Opening `/rpc` directly in a browser sends a GET request. JSON-RPC transaction/method calls are normally POST requests. This gateway keeps GET available for safe browser testing and forwards real JSON-RPC POST requests to the actual TMR node.
 
 ## Security
 
-Do not upload `.env` or a real `DATABASE_URL` to GitHub.
+Do **not** put a block-producer private key in a Config/public environment variable.
+
+If a private key has already been exposed in a screenshot or shared location, rotate that key and use a new one.
+
+This project does not store private keys and does not create fake balances or fake blocks.
