@@ -4,6 +4,9 @@
   "private": true,
   "description": "TMR Blockchain JSON-RPC gateway for Vercel",
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
   }
 }
