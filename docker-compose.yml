@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tmr
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: tmr_blockchain
+    volumes:
+      - tmr_pg:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+  node:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://tmr:change-me@postgres:5432/tmr_blockchain
+      TMR_CHAIN_ID: TMR-CHAIN-1
+      TMR_NETWORK: testnet
+      TMR_NODE_ID: tmr-node-001
+    ports:
+      - "3000:3000"
+volumes:
+  tmr_pg:

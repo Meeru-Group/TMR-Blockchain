@@ -1,61 +1,56 @@
-# TMR Blockchain RPC — Vercel
+# TMR Blockchain Node + PostgreSQL
 
-This package is a **real JSON-RPC gateway**, not a fake blockchain database.
+This is the **node**, not a Vercel RPC gateway.
 
-## Important
+## Architecture
 
-Vercel is the RPC HTTP gateway. The actual blockchain/node must be running somewhere reachable by HTTPS.
+Oracle Cloud/VPS:
+- Node.js persistent process
+- PostgreSQL persistent database
+- TMR block production
+- Transaction pool
+- Block/transaction/validator APIs
+- Explorer UI
 
-Set this Vercel Environment Variable:
+Vercel is not required for the blockchain node. You can optionally put a separate frontend/explorer on Vercel.
 
-```env
-TMR_UPSTREAM_RPC_URL=https://YOUR-REAL-TMR-NODE/rpc
-```
+## Run on Oracle Cloud
 
-Optional:
-
-```env
-RPC_API_KEY=your-long-random-key
-TMR_CHAIN_ID=TMR-CHAIN-1
-TMR_NETWORK=testnet
-```
-
-## Deploy
-
-1. Upload this project to a GitHub repository.
-2. Import the repository into Vercel.
-3. Add the environment variables in **Project → Settings → Environment Variables**.
-4. Redeploy.
-5. Test:
-
-```text
-https://YOUR-DOMAIN.vercel.app/rpc
-```
-
-The browser GET response is read-only. JSON-RPC requests should normally be sent with POST.
-
-## Test with curl
-
-Chain ID:
+Install Node.js 22 and PostgreSQL, create a database, then:
 
 ```bash
-curl -X POST https://YOUR-DOMAIN.vercel.app/rpc   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","id":1,"method":"tmr_chainId","params":[]}'
+npm install
+cp .env.example .env
+# edit DATABASE_URL and node settings
+npm start
 ```
 
-Status:
+The node listens on port 3000.
 
-```bash
-curl -X POST https://YOUR-DOMAIN.vercel.app/rpc   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","id":2,"method":"tmr_status","params":[]}'
-```
+## Endpoints
 
-## Why the old endpoint failed
+- `GET /health`
+- `GET /api/network`
+- `GET /api/blocks`
+- `GET /api/blocks/:height-or-hash`
+- `GET /api/transactions`
+- `GET /api/transactions/:hash`
+- `GET /api/validators`
+- `POST /api/transactions`
+- `POST /api/blocks/produce`
 
-Opening `/rpc` directly in a browser sends a GET request. JSON-RPC transaction/method calls are normally POST requests. This gateway keeps GET available for safe browser testing and forwards real JSON-RPC POST requests to the actual TMR node.
+If `API_KEY` is set, POST endpoints require:
 
-## Security
+`Authorization: Bearer YOUR_API_KEY`
 
-Do **not** put a block-producer private key in a Config/public environment variable.
+## PostgreSQL
 
-If a private key has already been exposed in a screenshot or shared location, rotate that key and use a new one.
+The database stores blocks, transactions, validators and chain metadata. It survives Node.js restarts.
 
-This project does not store private keys and does not create fake balances or fake blocks.
+## Important blockchain note
+
+This is a working persistent single-node foundation with Proof-of-Reputation metadata and deterministic block hashing. It is **not yet a production decentralized multi-validator consensus network**. Before mainnet, add signed transactions, validator keys, peer-to-peer networking, fork choice/finality, state-transition rules, balance/account tables, replay protection and independent validator verification.
+
+## Vercel
+
+Do not deploy this persistent node itself to Vercel. Vercel serverless functions are not a replacement for a continuously running blockchain node. Use Oracle Cloud/VPS for the node and optionally Vercel for an explorer/frontend.
