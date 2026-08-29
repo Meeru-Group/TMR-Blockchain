@@ -2,16 +2,13 @@
   "version": 2,
   "functions": {
     "api/rpc.js": {
+      "runtime": "nodejs20.x",
       "maxDuration": 30
     }
   },
   "routes": [
     {
-      "src": "/rpc",
-      "dest": "/api/rpc.js"
-    },
-    {
-      "src": "/rpc/",
+      "src": "/rpc(?:/)?",
       "dest": "/api/rpc.js"
     }
   ]
